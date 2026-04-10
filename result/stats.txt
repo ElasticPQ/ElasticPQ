@@ -1,0 +1,70 @@
+	[group-stats] quantizer=PQ space=original entries=8 total_dims=96 total_bits=64
+	[group-stats] group[000] ndims=12 bits=8 D_proxy=0.046515
+	[group-stats] group[001] ndims=12 bits=8 D_proxy=0.047118
+	[group-stats] group[002] ndims=12 bits=8 D_proxy=0.044061
+	[group-stats] group[003] ndims=12 bits=8 D_proxy=0.047203
+	[group-stats] group[004] ndims=12 bits=8 D_proxy=0.044712
+	[group-stats] group[005] ndims=12 bits=8 D_proxy=0.043235
+	[group-stats] group[006] ndims=12 bits=8 D_proxy=0.044216
+	[group-stats] group[007] ndims=12 bits=8 D_proxy=0.045454
+	[group-stats] J_proxy=0.362514
+
+
+	[group-stats] quantizer=OPQ space=opq-space(d2=96) entries=8 total_dims=96 total_bits=64
+	[group-stats] group[000] ndims=12 bits=8 D_proxy=0.033202
+	[group-stats] group[001] ndims=12 bits=8 D_proxy=0.032504
+	[group-stats] group[002] ndims=12 bits=8 D_proxy=0.032775
+	[group-stats] group[003] ndims=12 bits=8 D_proxy=0.034020
+	[group-stats] group[004] ndims=12 bits=8 D_proxy=0.033296
+	[group-stats] group[005] ndims=12 bits=8 D_proxy=0.034244
+	[group-stats] group[006] ndims=12 bits=8 D_proxy=0.030899
+	[group-stats] group[007] ndims=12 bits=8 D_proxy=0.034014
+	[group-stats] J_proxy=0.264954
+
+
+	[group-stats] quantizer=BAPQ space=pca-space entries=24 total_dims=96 total_bits=64
+	[group-stats] group[000] ndims=4 bits=8 D_proxy=0.010837
+	[group-stats] group[001] ndims=4 bits=8 D_proxy=0.009483
+	[group-stats] group[002] ndims=4 bits=7 D_proxy=0.010343
+	[group-stats] group[003] ndims=4 bits=6 D_proxy=0.011671
+	[group-stats] group[004] ndims=4 bits=6 D_proxy=0.010017
+	[group-stats] group[005] ndims=4 bits=5 D_proxy=0.012128
+	[group-stats] group[006] ndims=4 bits=5 D_proxy=0.011127
+	[group-stats] group[007] ndims=4 bits=4 D_proxy=0.013885
+	[group-stats] group[008] ndims=4 bits=4 D_proxy=0.012283
+	[group-stats] group[009] ndims=4 bits=4 D_proxy=0.011610
+	[group-stats] group[010] ndims=4 bits=3 D_proxy=0.013872
+	[group-stats] group[011] ndims=4 bits=3 D_proxy=0.012550
+	[group-stats] group[012] ndims=4 bits=1 D_proxy=0.019979
+	[group-stats] group[013] ndims=4 bits=0 D_proxy=0.022095
+	[group-stats] group[014] ndims=4 bits=0 D_proxy=0.019839
+	[group-stats] group[015] ndims=4 bits=0 D_proxy=0.018203
+	[group-stats] group[016] ndims=4 bits=0 D_proxy=0.016970
+	[group-stats] group[017] ndims=4 bits=0 D_proxy=0.015518
+	[group-stats] group[018] ndims=4 bits=0 D_proxy=0.014236
+	[group-stats] group[019] ndims=4 bits=0 D_proxy=0.012913
+	[group-stats] group[020] ndims=4 bits=0 D_proxy=0.011045
+	[group-stats] group[021] ndims=4 bits=0 D_proxy=0.010042
+	[group-stats] group[022] ndims=4 bits=0 D_proxy=0.008748
+	[group-stats] group[023] ndims=4 bits=0 D_proxy=0.006253
+	[group-stats] J_proxy=0.315648
+
+
+
+	[group-stats] quantizer=rEPQ space=original entries=6 total_dims=96 total_bits=64
+	[group-stats] group[000] ndims=16 bits=11 D_proxy=0.055631
+	[group-stats] group[001] ndims=10 bits=9 D_proxy=0.028115
+	[group-stats] group[002] ndims=17 bits=11 D_proxy=0.059027
+	[group-stats] group[003] ndims=17 bits=11 D_proxy=0.059435
+	[group-stats] group[004] ndims=16 bits=11 D_proxy=0.054023
+	[group-stats] group[005] ndims=20 bits=11 D_proxy=0.074329
+	[group-stats] J_proxy=0.330561
+
+	[group-stats] quantizer=EPQ space=epq-train-space entries=6 total_dims=96 total_bits=64
+	[group-stats] group[000] ndims=16 bits=11 D_proxy=0.042456
+	[group-stats] group[001] ndims=10 bits=9 D_proxy=0.023687
+	[group-stats] group[002] ndims=17 bits=11 D_proxy=0.043210
+	[group-stats] group[003] ndims=17 bits=11 D_proxy=0.042785
+	[group-stats] group[004] ndims=16 bits=11 D_proxy=0.041150
+	[group-stats] group[005] ndims=20 bits=11 D_proxy=0.049170
+	[group-stats] J_proxy=0.242457

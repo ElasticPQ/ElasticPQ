@@ -1,0 +1,30 @@
+{
+  "task_name": "Kinetics-700",
+  "n_raw_queries": 1000,
+  "n_raw_candidates": 519,
+  "n_queries": 1000,
+  "n_candidates": 519,
+  "n_train_vectors": 51779,
+  "n_skipped_queries": 0,
+  "n_skipped_candidates": 0,
+  "query_keep_rate": 1.0,
+  "candidate_keep_rate": 1.0,
+  "metrics": {
+    "hit@1": 0.017,
+    "precision@1": 0.017,
+    "recall@1": 0.017,
+    "mrr@1": 0.017,
+    "hit@10": 0.196,
+    "precision@10": 0.019600000000000003,
+    "recall@10": 0.196,
+    "mrr@10": 0.062181349206349205,
+    "hit@50": 0.564,
+    "precision@50": 0.01128,
+    "recall@50": 0.564,
+    "mrr@50": 0.07834655507679517,
+    "hit@100": 0.735,
+    "precision@100": 0.00735,
+    "recall@100": 0.735,
+    "mrr@100": 0.08082134680143872
+  }
+}

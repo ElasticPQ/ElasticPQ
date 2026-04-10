@@ -1,0 +1,30 @@
+{
+  "task_name": "ImageNet-1K",
+  "n_raw_queries": 1000,
+  "n_raw_candidates": 1000,
+  "n_queries": 1000,
+  "n_candidates": 1000,
+  "n_train_vectors": 51779,
+  "n_skipped_queries": 0,
+  "n_skipped_candidates": 0,
+  "query_keep_rate": 1.0,
+  "candidate_keep_rate": 1.0,
+  "metrics": {
+    "hit@1": 0.013,
+    "precision@1": 0.013,
+    "recall@1": 0.013,
+    "mrr@1": 0.013,
+    "hit@10": 0.079,
+    "precision@10": 0.0079,
+    "recall@10": 0.079,
+    "mrr@10": 0.02801031746031746,
+    "hit@50": 0.263,
+    "precision@50": 0.005260000000000001,
+    "recall@50": 0.263,
+    "mrr@50": 0.0358605078506485,
+    "hit@100": 0.408,
+    "precision@100": 0.00408,
+    "recall@100": 0.408,
+    "mrr@100": 0.037896144977928856
+  }
+}

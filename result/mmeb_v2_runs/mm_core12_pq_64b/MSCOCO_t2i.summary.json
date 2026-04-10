@@ -1,0 +1,30 @@
+{
+  "task_name": "MSCOCO_t2i",
+  "n_raw_queries": 1000,
+  "n_raw_candidates": 1002,
+  "n_queries": 1000,
+  "n_candidates": 1002,
+  "n_train_vectors": 51779,
+  "n_skipped_queries": 0,
+  "n_skipped_candidates": 0,
+  "query_keep_rate": 1.0,
+  "candidate_keep_rate": 1.0,
+  "metrics": {
+    "hit@1": 0.062,
+    "precision@1": 0.062,
+    "recall@1": 0.062,
+    "mrr@1": 0.062,
+    "hit@10": 0.29,
+    "precision@10": 0.029,
+    "recall@10": 0.29,
+    "mrr@10": 0.11680436507936506,
+    "hit@50": 0.634,
+    "precision@50": 0.01268,
+    "recall@50": 0.634,
+    "mrr@50": 0.13362588579208248,
+    "hit@100": 0.766,
+    "precision@100": 0.007659999999999999,
+    "recall@100": 0.766,
+    "mrr@100": 0.13546807170175662
+  }
+}
