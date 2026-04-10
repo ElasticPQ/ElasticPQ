@@ -1,0 +1,4 @@
+# CPU baseline dependencies for bench_quantizer.py and root quantizer modules.
+# If your environment uses a GPU-enabled FAISS build, replace faiss-cpu accordingly.
+numpy
+faiss-cpu

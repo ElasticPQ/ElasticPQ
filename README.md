@@ -46,6 +46,25 @@ Dataset names are matched by substring and currently map to:
 
 Unknown names fall back to `SIFT1M`.
 
+### Requirements
+
+The `bench_quantizer.py` path and its EPQ/BAPQ/OPQ dependencies only require:
+
+- `numpy`
+- a Python FAISS build that includes `faiss.contrib.datasets`
+
+For a basic CPU environment, install from [requirements-bench-quantizer.txt](D:\Projects\Python\PythonProject\epq_ano\requirements-bench-quantizer.txt):
+
+```bash
+pip install -r requirements-bench-quantizer.txt
+```
+
+Notes:
+
+- The requirements file uses `faiss-cpu` by default.
+- If you use a GPU FAISS build in your environment, replace `faiss-cpu` with the corresponding FAISS package provided by your package manager.
+- Everything else used by `bench_quantizer.py` and the root quantizer modules comes from the Python standard library.
+
 ### Downloading classic ANN datasets
 
 `bench_quantizer.py` follows the on-disk conventions used by `faiss.contrib.datasets`, so the easiest approach is to prepare a local `data/` directory with the exact filenames FAISS expects.
@@ -176,6 +195,42 @@ For each target index, the script reports:
 - `recall@1/10/100/1000`
 - `overlap@1000`, a coverage-style metric used for BAPQ-style evaluation
 - sampled reconstruction error when the backend exposes a reconstruction path
+
+### Existing classic ANN results
+
+The repository already includes summarized `bench_quantizer.py` results under [result/record.md](D:\Projects\Python\PythonProject\epq_ano\result\record.md).
+
+This file currently records comparison tables for:
+
+- `SIFT1M` at `64b` and `128b`
+- `GIST1M` at `64b` and `128b`
+- `DEEP10M` at `64b` and `128b`
+- `PQ`, `OPQ`, `BAPQ`, `EPQ(raw)`, and `EPQ`
+
+The tables are intended as a compact experiment log of the current checked-in benchmark outputs, rather than a machine-readable export format.
+
+### Precomputed EPQ structures
+
+The repository also includes precomputed EPQ grouping/bit-allocation structures under [result/structure](D:\Projects\Python\PythonProject\epq_ano\result\structure).
+
+Current files include:
+
+- `sift_64B_epq_structure.json`
+- `sift_128B_epq_structure.json`
+- `gist_64B_epq_structure.json`
+- `gist_128B_epq_structure.json`
+- `deep_64B_epq_structure.json`
+- `deep_128B_epq_structure.json`
+
+These files are shortcut artifacts for rerunning evaluation without manually retraining the EPQ structure search pipeline. In other words, they let `bench_quantizer.py` skip the grow/crystallize/marginal-beam grouping stage and go straight to training/evaluation with a fixed structure.
+
+Typical usage:
+
+```bash
+python bench_quantizer.py sift1M 64 epq --epq-structure=result/structure/sift_64B_epq_structure.json
+python bench_quantizer.py deep10M 128 epq --epq-structure=result/structure/deep_128B_epq_structure.json
+python bench_quantizer.py gist1M 128 repq --repq-structure=result/structure/gist_128B_epq_structure.json
+```
 
 ## `mmeb_v2_bench/` package
 
@@ -361,6 +416,24 @@ By default, the package uses:
 - run outputs: `mmeb_v2_bench/runs/latest`
 
 Each task writes a `<task>.summary.json`, and the run directory also gets a merged `summary.json`. If `--save-rankings` is enabled, the package also writes `<task>.rankings.jsonl`.
+
+### Existing MMEB-V2 results
+
+In addition to the default runtime output directory above, this repository already contains checked-in MMEB-V2 benchmark outputs under [result/mmeb_v2_runs](D:\Projects\Python\PythonProject\epq_ano\result\mmeb_v2_runs).
+
+Included runs currently are:
+
+- `mm_core12_epq_64b`
+- `mm_core12_pq_64b`
+- `mm_core12_opq_64b`
+- `mm_core12_bapq_64b`
+
+Each run directory contains:
+
+- one aggregated `summary.json`
+- one per-task `<task>.summary.json` file for tasks such as `MSCOCO_t2i`, `ImageNet-1K`, `Kinetics-700`, `QVHighlight`, `ViDoRe_docvqa`, and `MMLongBench-doc`
+
+These directories should be read as archived experiment outputs that were copied into `result/mmeb_v2_runs/` for reference. They are separate from the CLI's default live output location `mmeb_v2_bench/runs/latest`.
 
 ### Dependencies
 
