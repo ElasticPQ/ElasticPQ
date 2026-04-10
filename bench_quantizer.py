@@ -53,6 +53,83 @@ except ImportError:
 # ============================================================
 
 QueryMode = Literal["adc", "sdc"]
+EPQStage = Literal["grow", "crystallize", "mbeam"]
+EPQ_STAGE_ORDER: Tuple[EPQStage, ...] = ("grow", "crystallize", "mbeam")
+
+
+def _parse_epq_stages(spec: str) -> Tuple[EPQStage, ...]:
+    raw = str(spec).strip().lower()
+    if raw in ("", "full", "default", "all"):
+        return EPQ_STAGE_ORDER
+    if raw in ("none", "off"):
+        return ()
+
+    aliases = {
+        "grow": "grow",
+        "g": "grow",
+        "crystallize": "crystallize",
+        "crystal": "crystallize",
+        "cryst": "crystallize",
+        "c": "crystallize",
+        "mbeam": "mbeam",
+        "beam": "mbeam",
+        "mb": "mbeam",
+        "marginal-beam": "mbeam",
+        "marginal_beam": "mbeam",
+        "marginalbeam": "mbeam",
+    }
+
+    seen = set()
+    out: List[EPQStage] = []
+    for token in raw.replace("+", ",").split(","):
+        key = token.strip()
+        if not key:
+            continue
+        canonical = aliases.get(key)
+        if canonical is None:
+            raise ValueError(
+                f"Invalid EPQ stage {token!r}; expected a subset of "
+                "{grow, crystallize, mbeam} or one of full/none"
+            )
+        if canonical not in seen:
+            seen.add(canonical)
+            out.append(canonical)  # type: ignore[arg-type]
+
+    ordered = [stage for stage in EPQ_STAGE_ORDER if stage in seen]
+    return tuple(ordered)
+
+
+def _epq_stages_label(stages: Sequence[EPQStage]) -> str:
+    stages_list = [str(stage) for stage in stages]
+    if stages_list == list(EPQ_STAGE_ORDER):
+        return "grow -> crystallize -> marginal beam search"
+    if not stages_list:
+        return "singleton-init -> solve_bits"
+
+    parts: List[str] = []
+    if "grow" in stages_list:
+        parts.append("grow")
+    else:
+        parts.append("singleton-init")
+    if "crystallize" in stages_list:
+        parts.append("crystallize")
+    if "mbeam" in stages_list:
+        parts.append("marginal beam search")
+    return " -> ".join(parts)
+
+
+def _epq_structure_cache_path(d: int, B: int, stages: Sequence[EPQStage]) -> str:
+    default = f"data/{d}d_{B}B_epq_structure.json"
+    stages_list = [str(stage) for stage in stages]
+    if stages_list == list(EPQ_STAGE_ORDER):
+        return default
+    if not stages_list:
+        suffix = "singleton"
+    elif "grow" not in stages_list:
+        suffix = "singleton_" + "_".join(stages_list)
+    else:
+        suffix = "_".join(stages_list)
+    return f"data/{d}d_{B}B_epq_structure__{suffix}.json"
 
 
 def _recall_at_k(I: np.ndarray, gt0: np.ndarray, k: int) -> float:
@@ -435,9 +512,10 @@ def build_epq(
     verbose: bool = True,
     structure: Optional[str] = None,
     enable_uneven_opq: bool = True,
+    stages: Sequence[EPQStage] = EPQ_STAGE_ORDER,
 ):
     """Construct an ElasticPQ instance."""
-    path = f"data/{d}d_{B}B_epq_structure.json"
+    path = _epq_structure_cache_path(d=int(d), B=int(B), stages=stages)
     from elastic_pq import ElasticPQ, ElasticPQConfig
 
     if structure:
@@ -448,26 +526,35 @@ def build_epq(
             print(f"[EPQ] loading fixed structure from {structure_path}")
         grouper = FixedStructureGrouper(EPQStructure.load_json(str(structure_path)))
     else:
+        from grouper import SingletonDimGrouper
         from grouper_grow import ClusterGrowGrouper, ClusterGrowGrouperConfig
         from forwarder_cryst import CrystallizationForwarder, CrystallizationForwarderConfig
         from forwarder_mc import MarginalBeamForwarder, MarginalBeamForwarderConfig
 
-        grouper = ClusterGrowGrouper(ClusterGrowGrouperConfig())
-        grouper = grouper.then(
-            CrystallizationForwarder(
-                CrystallizationForwarderConfig(verbose=bool(verbose))
-            )
-        )
-        grouper = grouper.then(
-            MarginalBeamForwarder(
-                MarginalBeamForwarderConfig(
-                    verbose=bool(verbose),
-                    seed=int(seed),
+        stage_set = set(str(stage) for stage in stages)
+
+        if "grow" in stage_set:
+            grouper = ClusterGrowGrouper(ClusterGrowGrouperConfig())
+        else:
+            grouper = SingletonDimGrouper()
+
+        if "crystallize" in stage_set:
+            grouper = grouper.then(
+                CrystallizationForwarder(
+                    CrystallizationForwarderConfig(verbose=bool(verbose))
                 )
             )
-        )
         if verbose:
-            print("[EPQ] grouper pipeline: grow -> crystallize -> marginal beam search")
+            print(f"[EPQ] grouper pipeline: {_epq_stages_label(stages)}")
+        if "mbeam" in stage_set:
+            grouper = grouper.then(
+                MarginalBeamForwarder(
+                    MarginalBeamForwarderConfig(
+                        verbose=bool(verbose),
+                        seed=int(seed),
+                    )
+                )
+            )
 
     cfg = ElasticPQConfig(
         d=int(d),
@@ -668,6 +755,7 @@ class Args:
     print_group_stats: bool = False
     epq_structure: Optional[str] = None
     repq_structure: Optional[str] = None
+    epq_stages: Tuple[EPQStage, ...] = EPQ_STAGE_ORDER
 
 
 def _parse_args(argv: Sequence[str]) -> Args:
@@ -676,7 +764,8 @@ def _parse_args(argv: Sequence[str]) -> Args:
         print(
             "usage: bench_codec_faiss_with_epq_adc.py dataset B target1 target2 ... "
             "[--mode=adc|sdc] [--print-group-stats] "
-            "[--epq-structure=name-or-path] [--repq-structure=name-or-path]"
+            "[--epq-structure=name-or-path] [--repq-structure=name-or-path] "
+            "[--epq-stages=full|none|grow,crystallize,mbeam]"
         )
         print("example: bench_codec_faiss_with_epq_adc.py sift1M 128 pq opq epq repq bapq")
         sys.exit(1)
@@ -696,6 +785,7 @@ def _parse_args(argv: Sequence[str]) -> Args:
     print_group_stats = False
     epq_structure: Optional[str] = None
     repq_structure: Optional[str] = None
+    epq_stages = EPQ_STAGE_ORDER
     targets: List[str] = []
     for t in todo:
         if t.startswith("--mode="):
@@ -709,6 +799,8 @@ def _parse_args(argv: Sequence[str]) -> Args:
             epq_structure = t.split("=", 1)[1].strip() or None
         elif t.startswith("--repq-structure="):
             repq_structure = t.split("=", 1)[1].strip() or None
+        elif t.startswith("--epq-stages="):
+            epq_stages = _parse_epq_stages(t.split("=", 1)[1].strip())
         elif t in ("--print-group-stats", "--print-groups"):
             print_group_stats = True
         else:
@@ -726,6 +818,7 @@ def _parse_args(argv: Sequence[str]) -> Args:
         print_group_stats=print_group_stats,
         epq_structure=epq_structure,
         repq_structure=repq_structure,
+        epq_stages=epq_stages,
     )
 
 
@@ -790,7 +883,8 @@ def main(argv: Sequence[str]) -> int:
         f"eval on {args.dataset} targets={args.targets} "
         f"B={B} | PQ/OPQ: nbits={pq_nbits}, M={M_pq} | BAPQ: q={q}, M={M_bapq} | "
         f"maxtrain={maxtrain} | mode={args.mode} | print_group_stats={args.print_group_stats} | "
-        f"epq_structure={args.epq_structure or '-'} | repq_structure={args.repq_structure or '-'}"
+        f"epq_structure={args.epq_structure or '-'} | repq_structure={args.repq_structure or '-'} | "
+        f"epq_stages={','.join(args.epq_stages) if args.epq_stages else 'none'}"
     )
 
     todo = set(args.targets)
@@ -812,6 +906,7 @@ def main(argv: Sequence[str]) -> int:
             verbose=True,
             structure=args.epq_structure,
             enable_uneven_opq=True,
+            stages=args.epq_stages,
         )
         epq_index = EPQIndexADC(epq, name="epq", lut_chunk=4096, query_batch=16, seed=123)
 
@@ -854,6 +949,7 @@ def main(argv: Sequence[str]) -> int:
             verbose=True,
             structure=args.repq_structure or args.epq_structure,
             enable_uneven_opq=False,
+            stages=args.epq_stages,
         )
         repq_index = EPQIndexADC(repq, name="repq", lut_chunk=4096, query_batch=16, seed=123)
 

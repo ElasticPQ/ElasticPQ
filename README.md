@@ -161,7 +161,7 @@ So a common workflow is:
 ### CLI shape
 
 ```bash
-python bench_quantizer.py <dataset> <total_bits> <target...> [--mode=adc|sdc] [--print-group-stats] [--epq-structure=name-or-path] [--repq-structure=name-or-path]
+python bench_quantizer.py <dataset> <total_bits> <target...> [--mode=adc|sdc] [--print-group-stats] [--epq-structure=name-or-path] [--repq-structure=name-or-path] [--epq-stages=full|none|grow,crystallize,mbeam]
 ```
 
 Examples:
@@ -171,6 +171,10 @@ python bench_quantizer.py sift1M 128 pq opq epq repq bapq
 python bench_quantizer.py gist1M 64 pq opq epq repq bapq
 python bench_quantizer.py deep10M 64 pq opq epq
 python bench_quantizer.py sift1M 128 epq --mode=sdc
+python bench_quantizer.py sift1M 128 epq --epq-stages=grow
+python bench_quantizer.py sift1M 128 epq --epq-stages=grow,crystallize
+python bench_quantizer.py sift1M 128 epq --epq-stages=crystallize,mbeam
+python bench_quantizer.py sift1M 128 epq --epq-stages=none
 python bench_quantizer.py gist1M 128 epq --epq-structure=gist_128B_epq_structure.json
 python bench_quantizer.py gist1M 128 repq --repq-structure=gist_128B_epq_structure.json
 ```
@@ -184,6 +188,11 @@ python bench_quantizer.py gist1M 128 repq --repq-structure=gist_128B_epq_structu
 - `--print-group-stats` prints proxy statistics for learned groups and bit allocation before the main search evaluation.
 - `--epq-structure` loads a precomputed EPQ structure, usually from `result/structure`, and skips the grow/crystallize/marginal-beam structure search step.
 - `--repq-structure` does the same for `repq`. If omitted, `repq` also accepts the value passed through `--epq-structure`.
+- `--epq-stages` controls the EPQ structure-search pipeline for ablations. The default is `full`, which means `grow -> crystallize -> marginal beam search`.
+- `--epq-stages=grow` keeps only the initial grow stage.
+- `--epq-stages=grow,crystallize` disables the marginal beam stage.
+- `--epq-stages=crystallize,mbeam` or `--epq-stages=none` disables grow. In that case the script replaces the missing grow initializer with a singleton partition where each dimension starts in its own group and the bit allocation is solved by `ctx.solve_bits(...)`.
+- The `--epq-stages` setting is shared by both `epq` and `repq` runs when they build a fresh structure instead of loading one from `--epq-structure` / `--repq-structure`.
 
 ### What gets reported
 

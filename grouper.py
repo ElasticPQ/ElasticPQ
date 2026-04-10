@@ -758,6 +758,24 @@ class DefaultGrouper(Grouper):
         return groups, bits
 
 
+class SingletonDimGrouper(Grouper):
+    """Initialize from singleton groups and solve bits with the context allocator.
+
+    This is primarily useful for EPQ ablations that disable the grow stage but
+    still need a valid full partition as the starting point for later forwarders.
+    """
+
+    def build_groups(self, ctx: EPQContext) -> Tuple[Groups, Bits]:
+        d = int(ctx.d)
+        if d <= 0:
+            raise ValueError("d must be positive")
+
+        groups: Groups = [[i] for i in range(d)]
+        alloc = ctx.solve_bits(groups)
+        bits = [int(b) for b in alloc.bits]
+        return groups, bits
+
+
 # ============================================================
 # Structure serialization (for fixed groups/bits)
 # ============================================================
