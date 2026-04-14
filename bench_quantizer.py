@@ -314,10 +314,48 @@ def _sample_indices(n: int, ns: int, seed: int = 123) -> np.ndarray:
 # BenchIndex protocol (duck-typed) with mode
 # ============================================================
 
+@dataclass
+class TrainStats:
+    structure_time: float = 0.0
+    preparation_time: float = 0.0
+    codebook_time: float = 0.0
+    total_training_time: float = 0.0
+
+
 class BenchIndex:
     def train(self, xt: np.ndarray) -> None: ...
     def add(self, xb: np.ndarray) -> None: ...
     def search(self, xq: np.ndarray, k: int, *, mode: QueryMode = "adc") -> Tuple[np.ndarray, np.ndarray]: ...
+    def get_train_stats(self) -> Optional[TrainStats]: ...
+
+
+def _normalize_train_stats(stats: Optional[TrainStats], fallback_total: float) -> TrainStats:
+    total = float(max(0.0, fallback_total))
+    if stats is None:
+        return TrainStats(
+            structure_time=0.0,
+            preparation_time=0.0,
+            codebook_time=total,
+            total_training_time=total,
+        )
+
+    structure = float(max(0.0, getattr(stats, "structure_time", 0.0)))
+    preparation = float(max(0.0, getattr(stats, "preparation_time", 0.0)))
+    codebook = float(max(0.0, getattr(stats, "codebook_time", 0.0)))
+    stats_total = float(max(0.0, getattr(stats, "total_training_time", 0.0)))
+    total_final = stats_total if stats_total > 0.0 else total
+
+    if structure + preparation + codebook <= 0.0:
+        codebook = total_final
+    elif abs((structure + preparation + codebook) - total_final) > 1e-6:
+        total_final = structure + preparation + codebook
+
+    return TrainStats(
+        structure_time=structure,
+        preparation_time=preparation,
+        codebook_time=codebook,
+        total_training_time=total_final,
+    )
 
 
 # ============================================================
@@ -336,9 +374,18 @@ class FaissIndexWrapper(BenchIndex):
     def __init__(self, index: faiss.Index, *, name: str = "faiss"):
         self.index = index
         self.name = str(name)
+        self._last_train_stats: Optional[TrainStats] = None
 
     def train(self, xt: np.ndarray) -> None:
+        t0 = time.time()
         self.index.train(np.ascontiguousarray(xt, dtype=np.float32))
+        total = time.time() - t0
+        self._last_train_stats = TrainStats(
+            structure_time=0.0,
+            preparation_time=0.0,
+            codebook_time=total,
+            total_training_time=total,
+        )
 
     def add(self, xb: np.ndarray) -> None:
         self.index.add(np.ascontiguousarray(xb, dtype=np.float32))
@@ -352,6 +399,188 @@ class FaissIndexWrapper(BenchIndex):
             )
         D, I = self.index.search(np.ascontiguousarray(xq, dtype=np.float32), int(k))
         return D, I
+
+    def get_train_stats(self) -> Optional[TrainStats]:
+        return self._last_train_stats
+
+
+class ProductQuantizerADCIndex(BenchIndex):
+    """Pure-Python ADC benchmark path for PQ / OPQ using extracted codebooks."""
+
+    def __init__(
+        self,
+        d: int,
+        M: int,
+        nbits: int,
+        *,
+        name: str,
+        use_opq: bool = False,
+        lut_chunk: int = 4096,
+        query_batch: int = 32,
+    ):
+        self.d = int(d)
+        self.M = int(M)
+        self.nbits = int(nbits)
+        self.name = str(name)
+        self.use_opq = bool(use_opq)
+        self.lut_chunk = int(max(128, lut_chunk))
+        self.query_batch = int(max(1, query_batch))
+
+        self.d2 = ((self.d + self.M - 1) // self.M) * self.M if self.use_opq else self.d
+        if self.d2 % self.M != 0:
+            raise ValueError(f"invalid d2/M for PQ ADC index: d2={self.d2}, M={self.M}")
+        if self.d % self.M != 0 and not self.use_opq:
+            raise ValueError(f"PQ requires d % M == 0, got d={self.d}, M={self.M}")
+
+        self.dsub = self.d2 // self.M
+        self.ksub = 1 << self.nbits
+
+        self.A: Optional[np.ndarray] = None
+        self.codebooks: Optional[np.ndarray] = None  # (M, ksub, dsub)
+        self.codes_db: Optional[np.ndarray] = None
+        self.nb: int = 0
+        self._last_train_stats: Optional[TrainStats] = None
+
+    @staticmethod
+    def _codes_dtype_for_nbits(nbits: int) -> np.dtype:
+        if nbits <= 8:
+            return np.uint8
+        if nbits <= 16:
+            return np.uint16
+        return np.uint32
+
+    def _require_trained(self) -> None:
+        if self.codebooks is None:
+            raise RuntimeError(f"{self.name} is not trained.")
+
+    def _apply_transform(self, x: np.ndarray) -> np.ndarray:
+        x = np.ascontiguousarray(x, dtype=np.float32)
+        if self.A is None:
+            return x
+        return np.ascontiguousarray(x @ self.A.T, dtype=np.float32)
+
+    def project(self, x: np.ndarray) -> np.ndarray:
+        return self._apply_transform(x)
+
+    def train(self, xt: np.ndarray) -> None:
+        xt = np.ascontiguousarray(xt, dtype=np.float32)
+        if xt.ndim != 2 or xt.shape[1] != self.d:
+            raise ValueError(f"xt must have shape (n, {self.d}), got {xt.shape}")
+
+        t0 = time.time()
+        x_train = xt
+        self.A = None
+        rotation_time = 0.0
+
+        if self.use_opq:
+            t_rot0 = time.time()
+            opq = faiss.OPQMatrix(self.d, self.M, self.d2)
+            opq.train(xt)
+            self.A = faiss.vector_to_array(opq.A).astype(np.float32, copy=False).reshape(self.d2, self.d)
+            if hasattr(opq, "apply_py"):
+                x_train = np.ascontiguousarray(opq.apply_py(xt), dtype=np.float32)
+            else:
+                x_train = np.ascontiguousarray(opq.apply(xt), dtype=np.float32)
+            rotation_time = time.time() - t_rot0
+
+        t_cb0 = time.time()
+        pq = faiss.ProductQuantizer(self.d2, self.M, self.nbits)
+        pq.train(x_train)
+        centroids = faiss.vector_to_array(pq.centroids).astype(np.float32, copy=False)
+        self.codebooks = np.ascontiguousarray(centroids.reshape(self.M, self.ksub, self.dsub), dtype=np.float32)
+        self.codes_db = None
+        self.nb = 0
+        codebook_time = time.time() - t_cb0
+
+        total = time.time() - t0
+        self._last_train_stats = TrainStats(
+            structure_time=0.0,
+            preparation_time=rotation_time,
+            codebook_time=codebook_time,
+            total_training_time=total,
+        )
+
+    def compute_codes(self, xb: np.ndarray) -> np.ndarray:
+        self._require_trained()
+        xb = np.ascontiguousarray(xb, dtype=np.float32)
+        if xb.ndim != 2 or xb.shape[1] != self.d:
+            raise ValueError(f"xb must have shape (n, {self.d}), got {xb.shape}")
+
+        x_work = self._apply_transform(xb).reshape(xb.shape[0], self.M, self.dsub)
+        dtype = self._codes_dtype_for_nbits(self.nbits)
+        codes = np.empty((xb.shape[0], self.M), dtype=dtype)
+
+        assert self.codebooks is not None
+        for m in range(self.M):
+            sub = np.ascontiguousarray(x_work[:, m, :], dtype=np.float32)
+            _, I = faiss.knn(sub, self.codebooks[m], 1)
+            codes[:, m] = I[:, 0].astype(dtype, copy=False)
+        return codes
+
+    def add(self, xb: np.ndarray) -> None:
+        codes = np.ascontiguousarray(self.compute_codes(xb))
+        self.codes_db = codes
+        self.nb = int(codes.shape[0])
+
+    def _build_lut_q_to_C(self, qsub: np.ndarray, C: np.ndarray) -> np.ndarray:
+        qsub = np.ascontiguousarray(qsub, dtype=np.float32)
+        C = np.ascontiguousarray(C, dtype=np.float32)
+        qn = np.sum(qsub * qsub, axis=1, keepdims=True)
+        cn = np.sum(C * C, axis=1, keepdims=True).T
+        out = np.empty((qsub.shape[0], C.shape[0]), dtype=np.float32)
+
+        for a in range(0, C.shape[0], self.lut_chunk):
+            z = min(int(C.shape[0]), a + self.lut_chunk)
+            out[:, a:z] = (qn + cn[:, a:z] - 2.0 * (qsub @ C[a:z].T)).astype(np.float32, copy=False)
+        return out
+
+    def search(self, xq: np.ndarray, k: int, *, mode: QueryMode = "adc") -> Tuple[np.ndarray, np.ndarray]:
+        self._require_trained()
+        if self.codes_db is None:
+            raise RuntimeError(f"{self.name}.add(xb) must be called before search().")
+        if str(mode).lower() != "adc":
+            raise NotImplementedError(f"{self.name} supports mode='adc' only in this benchmark.")
+
+        xq = np.ascontiguousarray(xq, dtype=np.float32)
+        if xq.ndim != 2 or xq.shape[1] != self.d:
+            raise ValueError(f"xq must have shape (n, {self.d}), got {xq.shape}")
+
+        xq_work = self._apply_transform(xq).reshape(xq.shape[0], self.M, self.dsub)
+        nq = int(xq.shape[0])
+        nb = int(self.nb)
+        k = int(k)
+
+        I_all = np.empty((nq, k), dtype=np.int64)
+        D_all = np.empty((nq, k), dtype=np.float32)
+
+        assert self.codebooks is not None
+        assert self.codes_db is not None
+
+        for q0 in range(0, nq, self.query_batch):
+            q1 = min(nq, q0 + self.query_batch)
+            luts: List[np.ndarray] = []
+            for m in range(self.M):
+                luts.append(self._build_lut_q_to_C(xq_work[q0:q1, m, :], self.codebooks[m]))
+
+            for bi in range(q1 - q0):
+                dist = np.zeros((nb,), dtype=np.float32)
+                for m in range(self.M):
+                    idx = self.codes_db[:, m].astype(np.int64, copy=False)
+                    dist += luts[m][bi, idx]
+
+                if k >= nb:
+                    sel = np.argsort(dist, kind="stable")[:k]
+                else:
+                    sel = np.argpartition(dist, k)[:k]
+                    sel = sel[np.argsort(dist[sel], kind="stable")]
+
+                I_all[q0 + bi] = sel.astype(np.int64, copy=False)
+                D_all[q0 + bi] = dist[sel].astype(np.float32, copy=False)
+
+        return D_all, I_all
+
+    def get_train_stats(self) -> Optional[TrainStats]:
+        return self._last_train_stats
 
 
 # ============================================================
@@ -393,6 +622,7 @@ class EPQIndexADC(BenchIndex):
         self._groups_for_codes: Optional[List[List[int]]] = None
         self._codebooks: Optional[List[np.ndarray]] = None
         self._M: int = 0
+        self._last_train_stats: Optional[TrainStats] = None
 
     def _apply_A(self, x: np.ndarray) -> np.ndarray:
         x = np.ascontiguousarray(x, dtype=np.float32)
@@ -403,7 +633,9 @@ class EPQIndexADC(BenchIndex):
 
     def train(self, xt: np.ndarray) -> None:
         xt = np.ascontiguousarray(xt, dtype=np.float32)
+        t0 = time.time()
         self.epq.train(xt)
+        total = time.time() - t0
 
         if getattr(self.epq, "global_A", None) is not None:
             groups = self.epq.groups_contig
@@ -420,6 +652,15 @@ class EPQIndexADC(BenchIndex):
         self._groups_for_codes = [list(map(int, g)) for g in groups]
         self._codebooks = [np.ascontiguousarray(C, dtype=np.float32) for C in codebooks]
         self._M = int(len(self._groups_for_codes))
+        self._last_train_stats = _normalize_train_stats(
+            TrainStats(
+                structure_time=float(getattr(self.epq, "last_structure_time", 0.0)),
+                preparation_time=float(getattr(self.epq, "last_preparation_time", 0.0)),
+                codebook_time=float(getattr(self.epq, "last_codebook_time", 0.0)),
+                total_training_time=float(getattr(self.epq, "last_train_total_time", 0.0)),
+            ),
+            total,
+        )
 
     def add(self, xb: np.ndarray) -> None:
         if self._groups_for_codes is None or self._codebooks is None:
@@ -582,6 +823,9 @@ class EPQIndexADC(BenchIndex):
                 D_all[qi] = dist[sel].astype(np.float32, copy=False)
 
         return D_all, I_all
+
+    def get_train_stats(self) -> Optional[TrainStats]:
+        return self._last_train_stats
 
 
 # ============================================================
@@ -826,12 +1070,29 @@ def eval_index(
 
     D, I = index.search(xq, k, mode=query_mode)
     t3 = time.time()
+    train_stats = _normalize_train_stats(
+        getattr(index, "get_train_stats", lambda: None)(),
+        t1 - t0,
+    )
+    add_time = float(t2 - t1 - stats_time)
+    search_time = float(t3 - t2)
+    nb = int(xb.shape[0])
+    nq = int(xq.shape[0])
+    encode_per_vector = add_time / nb if nb > 0 else float("nan")
+    search_per_query = search_time / nq if nq > 0 else float("nan")
+    qps = nq / search_time if search_time > 0 else float("inf")
 
-    print(f"\ttraining time: {t1 - t0:.3f} s")
+    print(f"\tstructure time: {train_stats.structure_time:.3f} s")
+    print(f"\tpreparation time: {train_stats.preparation_time:.3f} s")
+    print(f"\tcodebook time: {train_stats.codebook_time:.3f} s")
+    print(f"\ttraining total: {train_stats.total_training_time:.3f} s")
     if pre_test_fn is not None:
         print(f"\tgroup-stats time: {stats_time:.3f} s")
-    print(f"\tadd/encode time: {t2 - t1 - stats_time:.3f} s")
-    print(f"\tsearch time: {t3 - t2:.3f} s")
+    print(f"\tadd/encode time: {add_time:.3f} s")
+    print(f"\tencode per vector: {encode_per_vector:.9f} s/vector")
+    print(f"\tsearch time: {search_time:.3f} s")
+    print(f"\tsearch per query: {search_per_query:.9f} s/query")
+    print(f"\tQPS: {qps:.3f} queries/s")
     print(f"\t{_report_recalls(I, gt, Ks=(1, 10, 100, 1000))}")
     print(f"\t{_report_overlaps(I, gt, Ks=(1000,), gt_k=1000)}")
 
@@ -1022,6 +1283,7 @@ def main(argv: Sequence[str]) -> int:
 
     print(
         f"eval on {args.dataset} targets={args.targets} "
+        f"| nb={nb} nq={nq} "
         f"B={B} | PQ/OPQ: nbits={pq_nbits}, M={M_pq} | BAPQ: q={q}, M={M_bapq} | "
         f"maxtrain={maxtrain} | mode={args.mode} | print_group_stats={args.print_group_stats} | "
         f"epq_structure={args.epq_structure or '-'} | repq_structure={args.repq_structure or '-'} | "
@@ -1163,6 +1425,15 @@ def main(argv: Sequence[str]) -> int:
             def search(self, xq: np.ndarray, k: int, *, mode: QueryMode = "adc") -> Tuple[np.ndarray, np.ndarray]:
                 return self.inner.search(xq, k, mode=mode)
 
+            def get_train_stats(self) -> Optional[TrainStats]:
+                bapq = self.inner._require_index().bapq
+                return TrainStats(
+                    structure_time=float(getattr(bapq, "last_structure_time", 0.0)),
+                    preparation_time=float(getattr(bapq, "last_preparation_time", 0.0)),
+                    codebook_time=float(getattr(bapq, "last_codebook_time", 0.0)),
+                    total_training_time=float(getattr(bapq, "last_train_total_time", 0.0)),
+                )
+
         eval_index(
             _BAPQAdapter(bapq_index),
             name=f"BAPQ paper-setting q={q} => M={M_bapq}, total_bits B={B}",
@@ -1191,16 +1462,24 @@ def main(argv: Sequence[str]) -> int:
             print("\tNOTE: BAPQIndex is ADC-only in this benchmark; ran ADC instead.")
 
     # ============================================================
-    # FAISS baselines (Index.search ADC)
+    # PQ / OPQ baselines with Python-side ADC
     # ============================================================
 
     if "pq" in todo:
-        idx = faiss.IndexPQ(d, M_pq, pq_nbits)
+        idx = ProductQuantizerADCIndex(
+            d=d,
+            M=M_pq,
+            nbits=pq_nbits,
+            name="PQ-ADC(py)",
+            use_opq=False,
+            lut_chunk=4096,
+            query_batch=16,
+        )
         pq_groups = _balanced_contiguous_groups(d, M_pq)
         pq_bits = [pq_nbits] * M_pq
         eval_index(
-            FaissIndexWrapper(idx, name="IndexPQ"),
-            name=f"PQ(IndexPQ) M={M_pq} nbits={pq_nbits} (B={B})",
+            idx,
+            name=f"PQ(Python-ADC) M={M_pq} nbits={pq_nbits} (B={B})",
             xq=xq,
             xb=xb,
             gt=gt,
@@ -1224,15 +1503,21 @@ def main(argv: Sequence[str]) -> int:
         )
 
     if "opq" in todo:
-        d2 = ((d + M_pq - 1) // M_pq) * M_pq
-        opq = faiss.OPQMatrix(d, M_pq, d2)
-        base = faiss.IndexPQ(d2, M_pq, pq_nbits)
-        idx = faiss.IndexPreTransform(opq, base)
+        idx = ProductQuantizerADCIndex(
+            d=d,
+            M=M_pq,
+            nbits=pq_nbits,
+            name="OPQ-ADC(py)",
+            use_opq=True,
+            lut_chunk=4096,
+            query_batch=16,
+        )
+        d2 = int(idx.d2)
         opq_groups = _balanced_contiguous_groups(d2, M_pq)
         opq_bits = [pq_nbits] * M_pq
         eval_index(
-            FaissIndexWrapper(idx, name="OPQ+IndexPQ"),
-            name=f"OPQ+PQ(IndexPreTransform) M={M_pq} nbits={pq_nbits} (B={B}) d2={d2}",
+            idx,
+            name=f"OPQ+PQ(Python-ADC) M={M_pq} nbits={pq_nbits} (B={B}) d2={d2}",
             xq=xq,
             xb=xb,
             gt=gt,
@@ -1245,7 +1530,7 @@ def main(argv: Sequence[str]) -> int:
                     quantizer_name="OPQ",
                     groups=opq_groups,
                     bits=opq_bits,
-                    proxy_input_fn=lambda xt=xt, opq=opq: np.ascontiguousarray(opq.apply(xt), dtype=np.float32),
+                    proxy_input_fn=lambda xt=xt, idx=idx: idx.project(xt),
                     proxy_d=d2,
                     seed=123,
                     entry_label="group",

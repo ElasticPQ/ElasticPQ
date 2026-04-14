@@ -446,6 +446,10 @@ class ElasticPQ:
 
         self.global_A: Optional[np.ndarray] = None
         self.is_trained: bool = False
+        self.last_structure_time: float = 0.0
+        self.last_preparation_time: float = 0.0
+        self.last_codebook_time: float = 0.0
+        self.last_train_total_time: float = 0.0
 
     def _save_and_fix_structure(self, groups: Groups, nbits: Bits) -> None:
         if _is_fixed_grouper(self.grouper):
@@ -486,6 +490,7 @@ class ElasticPQ:
             raise ValueError(f"dimension mismatch: expected d={self.d}, got {d}")
 
         t0 = time.time()
+        fixed_structure = _is_fixed_grouper(self.grouper)
         if self.verbose:
             print(f"[ElasticPQ] training n={n} d={d} B={self.B}")
 
@@ -509,6 +514,14 @@ class ElasticPQ:
         sizes = [len(g) for g in self.groups_orig]
         self.groups_contig = _groups_as_contiguous_blocks(sizes)
 
+        # Structure is fully determined here; if requested, persist it as part of the
+        # structure phase so the reported phase sum matches the observed total better.
+        if (not _is_fixed_grouper(self.grouper)) and self.structure_save_path:
+            self._save_and_fix_structure(self.groups_orig, self.nbits_per_group)
+
+        t_after_structure = time.time()
+        self.last_structure_time = 0.0 if fixed_structure else (t_after_structure - t0)
+
         if self.verbose:
             print(f"[ElasticPQ] groups built: M={self.M} sizes={sizes} bits={self.nbits_per_group}")
 
@@ -516,8 +529,10 @@ class ElasticPQ:
         self.global_A = None
         xt_train = xt
         groups_for_training = self.groups_orig
+        self.last_preparation_time = 0.0
 
         if self.enable_uneven_opq:
+            t_rot0 = time.time()
             perm = _perm_from_groups(self.groups_orig, self.d)
             self.perm = perm
 
@@ -556,12 +571,10 @@ class ElasticPQ:
 
             xt_train = np.ascontiguousarray(xt @ self.global_A, dtype=np.float32)
             groups_for_training = self.groups_contig
+            self.last_preparation_time = time.time() - t_rot0
 
-        # 3) structure is stable now (no realloc), save if requested
-        if (not _is_fixed_grouper(self.grouper)) and self.structure_save_path:
-            self._save_and_fix_structure(self.groups_orig, self.nbits_per_group)
-
-        # 4) train per-group codebooks
+        # 3) train per-group codebooks
+        t_cb0 = time.time()
         self.codebooks = []
         for gi, dims in enumerate(groups_for_training):
             sub = np.ascontiguousarray(xt_train[:, dims], dtype=np.float32)
@@ -589,6 +602,8 @@ class ElasticPQ:
             self.codebooks.append(np.ascontiguousarray(km.centroids, dtype=np.float32))
 
         self.is_trained = True
+        self.last_train_total_time = time.time() - t0
+        self.last_codebook_time = time.time() - t_cb0
 
         if self.verbose:
             print(

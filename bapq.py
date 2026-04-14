@@ -19,6 +19,7 @@ Dependencies:
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 from typing import List, Optional, Tuple, Any
 
 import numpy as np
@@ -126,6 +127,10 @@ class BAPQ:
     groups: Optional[List[List[int]]] = None
     nbits_per_group: Optional[List[int]] = None
     codebooks: Optional[List[np.ndarray]] = None
+    last_structure_time: float = 0.0
+    last_preparation_time: float = 0.0
+    last_codebook_time: float = 0.0
+    last_train_total_time: float = 0.0
 
     def _check(self) -> None:
         if self.d <= 0 or self.M <= 0 or self.B < 0:
@@ -157,10 +162,14 @@ class BAPQ:
         """
         self._check()
         xt = _as_f32(xt)
+        t0 = time.time()
+        self.last_structure_time = 0.0
 
         # 1) PCA
+        t_rot0 = time.time()
         self._fit_pca(xt)
         xtp = self.transform(xt)
+        pca_time = time.time() - t_rot0
 
         # 2) groups
         groups = _make_groups(self.d, self.M)
@@ -222,14 +231,19 @@ class BAPQ:
             Ej[best_g] = float(mse_new)
 
         self.nbits_per_group = [int(b) for b in bits]
+        self.last_preparation_time = time.time() - t0
 
         # 4) Finalize codebooks
+        t_cb0 = time.time()
         codebooks: List[np.ndarray] = []
         for gi in range(self.M):
             b = bits[gi]
             _, C = get_mse_and_C(gi, b)
             codebooks.append(_as_f32(C))
         self.codebooks = codebooks
+        self.last_train_total_time = time.time() - t0
+        self.last_preparation_time = max(self.last_preparation_time, pca_time)
+        self.last_codebook_time = time.time() - t_cb0
 
     def compute_codes(self, x: np.ndarray) -> np.ndarray:
         if self.groups is None or self.codebooks is None or self.nbits_per_group is None:

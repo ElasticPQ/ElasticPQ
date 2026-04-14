@@ -202,12 +202,19 @@ python bench_quantizer.py sift1M 128 pq opq epq --threads=8 --cpu-affinity=0-7
 
 For each target index, the script reports:
 
-- training time
+- `structure time`
+- `preparation time`
+- `codebook time`
+- `training total`
 - add/encode time
 - search time
 - `recall@1/10/100/1000`
 - `overlap@1000`, a coverage-style metric used for BAPQ-style evaluation
 - sampled reconstruction error when the backend exposes a reconstruction path
+
+Benchmark note:
+
+- `PQ` and `OPQ` search are evaluated through the repository's Python-side LUT/ADC path instead of `faiss.IndexPQ.search`, so their search-time comparison is closer to the EPQ/BAPQ implementation style and less affected by FAISS's specialized PQ scan optimizations.
 
 ### Existing classic ANN results
 
