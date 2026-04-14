@@ -161,7 +161,7 @@ So a common workflow is:
 ### CLI shape
 
 ```bash
-python bench_quantizer.py <dataset> <total_bits> <target...> [--mode=adc|sdc] [--print-group-stats] [--epq-structure=name-or-path] [--repq-structure=name-or-path] [--epq-stages=full|none|grow,crystallize,mbeam]
+python bench_quantizer.py <dataset> <total_bits> <target...> [--mode=adc|sdc] [--print-group-stats] [--epq-structure=name-or-path] [--repq-structure=name-or-path] [--epq-stages=full|none|grow,crystallize,mbeam] [--threads=N] [--cpu-affinity=0,1,2-5]
 ```
 
 Examples:
@@ -177,6 +177,8 @@ python bench_quantizer.py sift1M 128 epq --epq-stages=crystallize,mbeam
 python bench_quantizer.py sift1M 128 epq --epq-stages=none
 python bench_quantizer.py gist1M 128 epq --epq-structure=gist_128B_epq_structure.json
 python bench_quantizer.py gist1M 128 repq --repq-structure=gist_128B_epq_structure.json
+python bench_quantizer.py sift1M 128 pq opq epq --threads=8
+python bench_quantizer.py sift1M 128 pq opq epq --threads=8 --cpu-affinity=0-7
 ```
 
 ### Important behavior
@@ -189,6 +191,8 @@ python bench_quantizer.py gist1M 128 repq --repq-structure=gist_128B_epq_structu
 - `--epq-structure` loads a precomputed EPQ structure, usually from `result/structure`, and skips the grow/crystallize/marginal-beam structure search step.
 - `--repq-structure` does the same for `repq`. If omitted, `repq` also accepts the value passed through `--epq-structure`.
 - `--epq-stages` controls the EPQ structure-search pipeline for ablations. The default is `full`, which means `grow -> crystallize -> marginal beam search`.
+- `--threads=N` caps FAISS OpenMP threads and also exports common BLAS/OpenMP thread env vars before `numpy` / `faiss` import, so the overall benchmark process is much less likely to fan out across all CPUs.
+- `--cpu-affinity=...` optionally pins the benchmark process to specific logical CPUs such as `0-7` or `0,2,4,6`. This is the stricter option when you want the process and FAISS to stay on a fixed CPU set.
 - `--epq-stages=grow` keeps only the initial grow stage.
 - `--epq-stages=grow,crystallize` disables the marginal beam stage.
 - `--epq-stages=crystallize,mbeam` or `--epq-stages=none` disables grow. In that case the script replaces the missing grow initializer with a singleton partition where each dimension starts in its own group and the bit allocation is solved by `ctx.solve_bits(...)`.

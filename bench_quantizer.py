@@ -33,11 +33,116 @@ Examples
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, Any, Callable, Literal
+
+
+_THREAD_ENV_VARS: Tuple[str, ...] = (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "BLIS_NUM_THREADS",
+)
+
+
+def _get_flag_value(argv: Sequence[str], name: str) -> Optional[str]:
+    for i in range(1, len(argv)):
+        arg = argv[i]
+        if arg == name:
+            if i + 1 >= len(argv):
+                raise ValueError(f"Missing value for {name}")
+            return argv[i + 1]
+        prefix = f"{name}="
+        if arg.startswith(prefix):
+            return arg[len(prefix):]
+    return None
+
+
+def _parse_positive_int(raw: str, *, flag: str) -> int:
+    try:
+        value = int(str(raw).strip())
+    except Exception as exc:
+        raise ValueError(f"Invalid {flag}={raw!r}; expected a positive integer") from exc
+    if value <= 0:
+        raise ValueError(f"Invalid {flag}={raw!r}; expected a positive integer")
+    return value
+
+
+def _parse_cpu_affinity(spec: str) -> Tuple[int, ...]:
+    cpus = set()
+    for part in str(spec).split(","):
+        token = part.strip()
+        if not token:
+            continue
+        if "-" in token:
+            left, right = token.split("-", 1)
+            start = int(left.strip())
+            end = int(right.strip())
+            if start > end:
+                raise ValueError(f"Invalid CPU range {token!r}: start > end")
+            cpus.update(range(start, end + 1))
+        else:
+            cpus.add(int(token))
+    ordered = tuple(sorted(cpus))
+    if not ordered:
+        raise ValueError("CPU affinity cannot be empty")
+    if ordered[0] < 0:
+        raise ValueError(f"Invalid CPU affinity {spec!r}; CPU ids must be >= 0")
+    return ordered
+
+
+def _set_thread_env(num_threads: int) -> None:
+    value = str(int(num_threads))
+    for key in _THREAD_ENV_VARS:
+        os.environ[key] = value
+
+
+def _set_process_affinity(cpus: Sequence[int]) -> None:
+    cpu_set = tuple(sorted(set(int(cpu) for cpu in cpus)))
+    if not cpu_set:
+        raise ValueError("CPU affinity cannot be empty")
+
+    if hasattr(os, "sched_setaffinity"):
+        os.sched_setaffinity(0, set(cpu_set))
+        return
+
+    if os.name == "nt":
+        import ctypes
+
+        if cpu_set[-1] >= 64:
+            raise ValueError("Windows affinity mask in this script supports CPU ids 0-63 only")
+
+        mask = 0
+        for cpu in cpu_set:
+            mask |= 1 << cpu
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetCurrentProcess()
+        if not kernel32.SetProcessAffinityMask(handle, ctypes.c_size_t(mask)):
+            raise OSError("SetProcessAffinityMask failed")
+        return
+
+    raise NotImplementedError("CPU affinity control is not supported on this platform")
+
+
+def _apply_early_runtime_from_argv(argv: Sequence[str]) -> None:
+    threads_raw = _get_flag_value(argv, "--threads")
+    affinity_raw = _get_flag_value(argv, "--cpu-affinity") or _get_flag_value(argv, "--affinity")
+
+    if threads_raw is not None:
+        _set_thread_env(_parse_positive_int(threads_raw, flag="--threads"))
+    if affinity_raw is not None:
+        _set_process_affinity(_parse_cpu_affinity(affinity_raw))
+
+
+if __name__ == "__main__":
+    _apply_early_runtime_from_argv(sys.argv)
 
 import faiss
 import numpy as np
@@ -756,6 +861,8 @@ class Args:
     epq_structure: Optional[str] = None
     repq_structure: Optional[str] = None
     epq_stages: Tuple[EPQStage, ...] = EPQ_STAGE_ORDER
+    threads: Optional[int] = None
+    cpu_affinity: Optional[str] = None
 
 
 def _parse_args(argv: Sequence[str]) -> Args:
@@ -765,7 +872,8 @@ def _parse_args(argv: Sequence[str]) -> Args:
             "usage: bench_codec_faiss_with_epq_adc.py dataset B target1 target2 ... "
             "[--mode=adc|sdc] [--print-group-stats] "
             "[--epq-structure=name-or-path] [--repq-structure=name-or-path] "
-            "[--epq-stages=full|none|grow,crystallize,mbeam]"
+            "[--epq-stages=full|none|grow,crystallize,mbeam] "
+            "[--threads=N] [--cpu-affinity=0,1,2-5]"
         )
         print("example: bench_codec_faiss_with_epq_adc.py sift1M 128 pq opq epq repq bapq")
         sys.exit(1)
@@ -786,6 +894,8 @@ def _parse_args(argv: Sequence[str]) -> Args:
     epq_structure: Optional[str] = None
     repq_structure: Optional[str] = None
     epq_stages = EPQ_STAGE_ORDER
+    threads: Optional[int] = None
+    cpu_affinity: Optional[str] = None
     targets: List[str] = []
     for t in todo:
         if t.startswith("--mode="):
@@ -801,6 +911,16 @@ def _parse_args(argv: Sequence[str]) -> Args:
             repq_structure = t.split("=", 1)[1].strip() or None
         elif t.startswith("--epq-stages="):
             epq_stages = _parse_epq_stages(t.split("=", 1)[1].strip())
+        elif t.startswith("--threads="):
+            threads = _parse_positive_int(t.split("=", 1)[1].strip(), flag="--threads")
+        elif t.startswith("--cpu-affinity="):
+            cpu_affinity = t.split("=", 1)[1].strip() or None
+            if cpu_affinity is not None:
+                _parse_cpu_affinity(cpu_affinity)
+        elif t.startswith("--affinity="):
+            cpu_affinity = t.split("=", 1)[1].strip() or None
+            if cpu_affinity is not None:
+                _parse_cpu_affinity(cpu_affinity)
         elif t in ("--print-group-stats", "--print-groups"):
             print_group_stats = True
         else:
@@ -819,6 +939,8 @@ def _parse_args(argv: Sequence[str]) -> Args:
         epq_structure=epq_structure,
         repq_structure=repq_structure,
         epq_stages=epq_stages,
+        threads=threads,
+        cpu_affinity=cpu_affinity,
     )
 
 
@@ -846,6 +968,25 @@ def _load_dataset(name: str):
 
 def main(argv: Sequence[str]) -> int:
     args = _parse_args(argv)
+
+    effective_threads: Optional[int] = None
+    if args.threads is not None:
+        faiss.omp_set_num_threads(int(args.threads))
+        omp_get_max_threads = getattr(faiss, "omp_get_max_threads", None)
+        if callable(omp_get_max_threads):
+            try:
+                effective_threads = int(omp_get_max_threads())
+            except Exception:
+                effective_threads = int(args.threads)
+        else:
+            effective_threads = int(args.threads)
+
+    effective_affinity: Optional[str] = None
+    if args.cpu_affinity is not None:
+        cpus = _parse_cpu_affinity(args.cpu_affinity)
+        _set_process_affinity(cpus)
+        effective_affinity = ",".join(str(cpu) for cpu in cpus)
+
     ds = _load_dataset(args.dataset)
 
     xq = np.ascontiguousarray(ds.get_queries(), dtype=np.float32)
@@ -884,7 +1025,9 @@ def main(argv: Sequence[str]) -> int:
         f"B={B} | PQ/OPQ: nbits={pq_nbits}, M={M_pq} | BAPQ: q={q}, M={M_bapq} | "
         f"maxtrain={maxtrain} | mode={args.mode} | print_group_stats={args.print_group_stats} | "
         f"epq_structure={args.epq_structure or '-'} | repq_structure={args.repq_structure or '-'} | "
-        f"epq_stages={','.join(args.epq_stages) if args.epq_stages else 'none'}"
+        f"epq_stages={','.join(args.epq_stages) if args.epq_stages else 'none'} | "
+        f"threads={effective_threads if effective_threads is not None else '-'} | "
+        f"cpu_affinity={effective_affinity or '-'}"
     )
 
     todo = set(args.targets)
