@@ -1,0 +1,32 @@
+{
+  "faiss": {
+    "distance_compute_blas_threshold": 20
+  },
+  "arepq": {
+    "tail_bits": 8,
+    "tail_stages": 1,
+    "tail_beam_candidates": 1
+  },
+  "index": {
+    "kmeans_niter": 1,
+    "kmeans_nredo": 1,
+    "use_uneven_transform": true,
+    "transform": {
+      "transform_niter": 0,
+      "transform_kmeans_niter": 1,
+      "transform_kmeans_nredo": 1,
+      "transform_max_train": 512,
+      "transform_max_eval": 512,
+      "transform_eval_frac": 0.2,
+      "transform_seed": 123,
+      "transform_proxy_max_bits": 8,
+      "transform_exact_polish_iters": 0
+    }
+  },
+  "builder": {
+    "type": "balanced",
+    "balanced": {
+      "nominal_group_bits": 8
+    }
+  }
+}

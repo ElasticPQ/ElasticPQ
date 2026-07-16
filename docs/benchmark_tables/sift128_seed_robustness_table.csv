@@ -1,0 +1,4 @@
+seed,M,recall_1,recall_10,recall_100,overlap_1000,reconstruction_error,train_s,add_s,search_s,qps,exit_status,log_path
+123,12,0.5204,0.9344,0.9993,0.7529,8842.349,694.247,29.176,16.555,604.033,0,docs/benchmark_tables/tmp_sift128_ablation_odd_20260711T125320Z/full_arepq.log
+456,12,0.5061,0.9341,0.9996,0.7519,8767.103,816.674,28.799,16.258,615.068,0,docs/benchmark_tables/tmp_sift128_seed_robustness_20260711T141328Z/seed_456.log
+789,11,0.5093,0.9351,0.9995,0.7548,8699.036,649.005,29.428,16.436,608.431,0,docs/benchmark_tables/tmp_sift128_seed_robustness_20260711T141328Z/seed_789.log

@@ -1,0 +1,767 @@
+#!/usr/bin/env python3
+"""Generate paper-facing flat ADC plots and tables from benchmark CSVs."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import math
+import sys
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Iterable, Optional
+
+from generate_paper_ivf_assets import PdfCanvas, write_pdf
+
+
+ROOT = Path(__file__).resolve().parent
+WORKSPACE_ROOT = ROOT.parents[2]
+PAPER_ROOT = WORKSPACE_ROOT / "paper"
+
+METHOD_FILES = {
+    "PQ": "PQ.csv",
+    "OPQ": "OPQ.csv",
+    "DP-OPQ": "DP-OPQ.csv",
+    "BAPQ": "BAPQ.csv",
+    "VAQ": "VAQ.csv",
+    "RQ": "RQ.csv",
+    "LSQ": "LSQ.csv",
+    "Product-only EPQ": "EPQ.csv",
+    "EPQ": "AREPQ.csv",
+}
+DEFAULT_METHODS = ["PQ", "OPQ", "DP-OPQ", "BAPQ", "VAQ", "RQ", "LSQ", "EPQ"]
+DEFAULT_RECALL_METHODS = [
+    "PQ",
+    "OPQ",
+    "DP-OPQ",
+    "BAPQ",
+    "VAQ",
+    "RQ",
+    "LSQ",
+    "Product-only EPQ",
+    "EPQ",
+]
+DEFAULT_DATASETS = ["sift1M", "gist1M", "deep10M"]
+DEFAULT_BITS = [64, 128]
+RECALL_DEPTHS = [1, 10, 100, 1000]
+PRODUCT_CODE_METHODS = ["PQ", "OPQ", "DP-OPQ", "BAPQ", "VAQ"]
+ADDITIVE_METHODS = ["RQ", "LSQ"]
+DATASET_DISPLAY = {
+    "sift1M": "SIFT1M",
+    "gist1M": "GIST1M",
+    "deep10M": "DEEP10M",
+}
+
+
+@dataclass(frozen=True)
+class CaseKey:
+    method: str
+    dataset: str
+    bits: int
+
+
+@dataclass
+class RowItem:
+    timestamp: datetime
+    row: dict
+
+
+@dataclass(frozen=True)
+class ProxyPoint:
+    method: str
+    dataset: str
+    bits: int
+    x: float
+    y: float
+
+
+@dataclass(frozen=True)
+class FitStats:
+    slope: float
+    intercept: float
+    r2: float
+
+
+def parse_timestamp(text: str) -> datetime:
+    value = text.strip()
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    return datetime.fromisoformat(value)
+
+
+def parse_str_list(text: str) -> list[str]:
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def parse_int_list(text: str) -> list[int]:
+    return [int(part.strip()) for part in text.split(",") if part.strip()]
+
+
+def safe_float(row: dict, name: str) -> Optional[float]:
+    value = str(row.get(name, "")).strip()
+    if not value or value == "N/A":
+        return None
+    return float(value)
+
+
+def load_rows(csv_dir: Path, methods: Iterable[str]) -> dict[CaseKey, RowItem]:
+    selected: dict[CaseKey, RowItem] = {}
+    for method in methods:
+        csv_name = METHOD_FILES.get(method)
+        if csv_name is None:
+            raise SystemExit(f"unknown method {method}; known methods: {', '.join(METHOD_FILES)}")
+        path = csv_dir / csv_name
+        if not path.exists():
+            raise RuntimeError(f"missing CSV for {method}: {path}")
+        with path.open(newline="") as handle:
+            for row in csv.DictReader(handle):
+                key = CaseKey(
+                    method=method,
+                    dataset=row["dataset"],
+                    bits=int(float(row["budget_b"])),
+                )
+                item = RowItem(parse_timestamp(row["timestamp"]), row)
+                previous = selected.get(key)
+                if previous is None or item.timestamp >= previous.timestamp:
+                    selected[key] = item
+    return selected
+
+
+def recall_at(row: dict, depth: int) -> float:
+    value = safe_float(row, f"recall_{depth}")
+    if value is None:
+        raise RuntimeError(f"missing recall_{depth} in row {row}")
+    return value
+
+
+def metric_value(row: dict, name: str) -> float:
+    value = safe_float(row, name)
+    if value is None:
+        raise RuntimeError(f"missing metric {name} in row {row}")
+    return value
+
+
+def fmt_seconds(value: float) -> str:
+    return f"{value:.1f}"
+
+
+def fmt_microseconds(value: float) -> str:
+    return f"{value:.2f}"
+
+
+def fmt_ms(value: float) -> str:
+    return f"{value:.3f}"
+
+
+def fmt_qps(value: float) -> str:
+    return f"{value:.0f}" if value >= 1000 else f"{value:.1f}"
+
+
+def fmt_gib(value: float) -> str:
+    return f"{value:.1f}"
+
+
+def fmt_mib(value: float) -> str:
+    return f"{value:.1f}"
+
+
+def flat_dataset_label(row: dict) -> str:
+    return DATASET_DISPLAY.get(row["dataset"], row["dataset"])
+
+
+def fmt_range(values: list[float], formatter) -> str:
+    low = min(values)
+    high = max(values)
+    low_text = formatter(low)
+    high_text = formatter(high)
+    if low_text == high_text:
+        return low_text
+    return f"{low_text}--{high_text}"
+
+
+def flat_non_codebook_train_seconds(row: dict) -> float:
+    return metric_value(row, "train_total_s") - metric_value(row, "codebook_s")
+
+
+def flat_group_values(
+    rows: dict[CaseKey, RowItem],
+    methods: list[str],
+    dataset: str,
+    bits: int,
+    value_fn,
+) -> list[float]:
+    return [value_fn(rows[CaseKey(method, dataset, bits)].row) for method in methods]
+
+
+def render_flat_epq_time_table(
+    rows: dict[CaseKey, RowItem],
+    datasets: list[str],
+    bits_list: list[int],
+) -> str:
+    lines = [
+        "% Generated by docs/benchmark_tables/generate_paper_flat_assets.py",
+        r"\begin{table*}[p]",
+        r"\centering",
+        r"\scriptsize",
+        r"\setlength{\tabcolsep}{2pt}",
+        r"\caption{Flat build and search diagnostics under the matched C++/AVX2 "
+        r"ADC protocol. RAM is peak RSS; other columns and grouped rows are "
+        r"defined in Section~\ref{sec:setup}.}",
+        r"\label{tab:epq-cost}",
+        r"\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lllrrrrrrrrr@{}}",
+        r"\toprule",
+        r"Dataset & Budget & Method & \multicolumn{3}{c}{Train (s)} "
+        r"& Add & Enc. & Search & QPS & RAM & Size \\",
+        r"\cmidrule(lr){4-6}",
+        r"& & & Structure & Prep & Codebook & (s) & ($\mu$s/vec) "
+        r"& (ms/q) & & (GiB) & (MiB) \\",
+        r"\midrule",
+    ]
+    first_case = True
+    for dataset in datasets:
+        for bits in bits_list:
+            if not first_case:
+                lines.append(r"\midrule")
+            first_case = False
+            row = rows[CaseKey("EPQ", dataset, bits)].row
+
+            def range_cells(methods: list[str]) -> list[str]:
+                return [
+                    "0.0",
+                    fmt_range(
+                        flat_group_values(
+                            rows,
+                            methods,
+                            dataset,
+                            bits,
+                            flat_non_codebook_train_seconds,
+                        ),
+                        fmt_seconds,
+                    ),
+                    fmt_range(
+                        flat_group_values(
+                            rows,
+                            methods,
+                            dataset,
+                            bits,
+                            lambda item: metric_value(item, "codebook_s"),
+                        ),
+                        fmt_seconds,
+                    ),
+                    fmt_range(
+                        flat_group_values(
+                            rows,
+                            methods,
+                            dataset,
+                            bits,
+                            lambda item: metric_value(item, "add_encode_s"),
+                        ),
+                        fmt_seconds,
+                    ),
+                    fmt_range(
+                        flat_group_values(
+                            rows,
+                            methods,
+                            dataset,
+                            bits,
+                            lambda item: metric_value(item, "encode_us_per_vec"),
+                        ),
+                        fmt_microseconds,
+                    ),
+                    fmt_range(
+                        flat_group_values(
+                            rows,
+                            methods,
+                            dataset,
+                            bits,
+                            lambda item: metric_value(item, "search_ms_per_q"),
+                        ),
+                        fmt_ms,
+                    ),
+                    fmt_range(
+                        flat_group_values(
+                            rows,
+                            methods,
+                            dataset,
+                            bits,
+                            lambda item: metric_value(item, "qps"),
+                        ),
+                        fmt_qps,
+                    ),
+                    fmt_range(
+                        flat_group_values(
+                            rows,
+                            methods,
+                            dataset,
+                            bits,
+                            lambda item: metric_value(item, "peak_ram_gb"),
+                        ),
+                        fmt_gib,
+                    ),
+                    fmt_range(
+                        flat_group_values(
+                            rows,
+                            methods,
+                            dataset,
+                            bits,
+                            lambda item: metric_value(item, "index_size_mb"),
+                        ),
+                        fmt_mib,
+                    ),
+                ]
+
+            lines.append(
+                " & ".join(
+                    [
+                        flat_dataset_label(row),
+                        f"{bits}b",
+                        "PC",
+                        *range_cells(PRODUCT_CODE_METHODS),
+                    ]
+                )
+                + r" \\"
+            )
+            lines.append(
+                " & ".join(["", "", "Add.", *range_cells(ADDITIVE_METHODS)])
+                + r" \\"
+            )
+            epq_cells = [
+                "",
+                "",
+                "EPQ",
+                fmt_seconds(metric_value(row, "structure_s")),
+                fmt_seconds(metric_value(row, "prep_s")),
+                fmt_seconds(metric_value(row, "codebook_s")),
+                fmt_seconds(metric_value(row, "add_encode_s")),
+                fmt_microseconds(metric_value(row, "encode_us_per_vec")),
+                fmt_ms(metric_value(row, "search_ms_per_q")),
+                fmt_qps(metric_value(row, "qps")),
+                fmt_gib(metric_value(row, "peak_ram_gb")),
+                fmt_mib(metric_value(row, "index_size_mb")),
+            ]
+            lines.append(" & ".join(epq_cells) + r" \\")
+    lines.extend([r"\bottomrule", r"\end{tabular*}", r"\end{table*}", ""])
+    return "\n".join(lines)
+
+
+def draw_flat_recall_figure(
+    rows: dict[CaseKey, RowItem],
+    methods: list[str],
+    datasets: list[str],
+    bits_list: list[int],
+    output: Path,
+) -> None:
+    width = 540.0
+    height = 400.0
+    canvas = PdfCanvas(width, height)
+    colors = {
+        "PQ": (0.10, 0.10, 0.10),
+        "OPQ": (0.00, 0.30, 0.65),
+        "DP-OPQ": (0.43, 0.24, 0.62),
+        "BAPQ": (0.78, 0.22, 0.15),
+        "VAQ": (0.58, 0.18, 0.42),
+        "RQ": (0.66, 0.11, 0.16),
+        "LSQ": (0.82, 0.49, 0.00),
+        "Product-only EPQ": (0.00, 0.58, 0.62),
+        "EPQ": (0.00, 0.47, 0.24),
+    }
+    shapes = {
+        "PQ": "circle",
+        "OPQ": "square",
+        "DP-OPQ": "triangle",
+        "BAPQ": "triangle",
+        "VAQ": "square",
+        "RQ": "diamond",
+        "LSQ": "circle",
+        "Product-only EPQ": "triangle",
+        "EPQ": "diamond",
+    }
+
+    canvas.text_center(width / 2, height - 16, "Flat ADC recall-depth curves", 10, "F2")
+    legend_font_size = 8.0
+    legend_line_w = 18.0
+    legend_text_gap = 5.0
+    legend_item_gap = 17.0
+
+    def legend_text_width(label: str) -> float:
+        return 0.58 * legend_font_size * len(label)
+
+    legend_widths = [
+        legend_line_w + legend_text_gap + legend_text_width(method) for method in methods
+    ]
+    legend_total_w = sum(legend_widths) + legend_item_gap * max(0, len(methods) - 1)
+    legend_x = (width - legend_total_w) / 2
+    for method, legend_w in zip(methods, legend_widths):
+        x = legend_x
+        y = height - 34
+        color = colors.get(method, (0, 0, 0))
+        canvas.stroke_rgb(color)
+        canvas.line_width(1.2 if method != "EPQ" else 1.7)
+        canvas.line(x, y + 3, x + legend_line_w, y + 3)
+        canvas.marker(x + legend_line_w / 2, y + 3, shapes.get(method, "circle"), 2.6, color)
+        canvas.fill_rgb((0, 0, 0))
+        canvas.text(x + legend_line_w + legend_text_gap, y, method, legend_font_size, "F1")
+        legend_x += legend_w + legend_item_gap
+
+    left = 42.0
+    right = 12.0
+    bottom = 36.0
+    top = 56.0
+    gap_x = 22.0
+    gap_y = 32.0
+    cols = len(datasets)
+    rows_n = len(bits_list)
+    panel_w = (width - left - right - (cols - 1) * gap_x) / cols
+    panel_h = (height - top - bottom - (rows_n - 1) * gap_y) / rows_n
+
+    x_values = [math.log10(depth) for depth in RECALL_DEPTHS]
+    x_min = min(x_values)
+    x_max = max(x_values)
+    x_pad = 0.05 * (x_max - x_min)
+    x_min -= x_pad
+    x_max += x_pad
+
+    for row_index, bits in enumerate(bits_list):
+        for col_index, dataset in enumerate(datasets):
+            x0 = left + col_index * (panel_w + gap_x)
+            y0 = height - top - (row_index + 1) * panel_h - row_index * gap_y
+
+            panel_values: dict[str, list[tuple[int, float]]] = {}
+            y_values: list[float] = []
+            for method in methods:
+                item = rows.get(CaseKey(method, dataset, bits))
+                if item is None:
+                    continue
+                values = [(depth, recall_at(item.row, depth)) for depth in RECALL_DEPTHS]
+                panel_values[method] = values
+                y_values.extend(value for _, value in values)
+
+            if not y_values:
+                continue
+            y_min = max(0.0, math.floor((min(y_values) - 0.03) / 0.05) * 0.05)
+            y_max = min(1.0, math.ceil((max(y_values) + 0.03) / 0.05) * 0.05)
+            if y_max <= y_min:
+                y_max = min(1.0, y_min + 0.1)
+
+            def map_x(depth: int) -> float:
+                value = math.log10(depth)
+                return x0 + (value - x_min) / (x_max - x_min) * panel_w
+
+            def map_y(value: float) -> float:
+                return y0 + (value - y_min) / (y_max - y_min) * panel_h
+
+            canvas.stroke_rgb((0.82, 0.82, 0.82))
+            canvas.line_width(0.35)
+            for tick_index in range(3):
+                y_tick = y_min + tick_index * (y_max - y_min) / 2.0
+                y = map_y(y_tick)
+                canvas.line(x0, y, x0 + panel_w, y)
+            for depth in RECALL_DEPTHS:
+                x = map_x(depth)
+                canvas.line(x, y0, x, y0 + panel_h)
+
+            canvas.stroke_rgb((0.0, 0.0, 0.0))
+            canvas.line_width(0.7)
+            canvas.line(x0, y0, x0 + panel_w, y0)
+            canvas.line(x0, y0, x0, y0 + panel_h)
+
+            for tick_index in range(3):
+                y_tick = y_min + tick_index * (y_max - y_min) / 2.0
+                y = map_y(y_tick)
+                canvas.stroke_rgb((0.0, 0.0, 0.0))
+                canvas.line_width(0.6)
+                canvas.line(x0 - 2, y, x0, y)
+                canvas.fill_rgb((0, 0, 0))
+                canvas.text_right(x0 - 4, y - 2.2, f"{y_tick:.2f}", 6.5)
+
+            for depth in RECALL_DEPTHS:
+                x = map_x(depth)
+                canvas.stroke_rgb((0.0, 0.0, 0.0))
+                canvas.line_width(0.6)
+                canvas.line(x, y0, x, y0 - 2)
+                label = "1k" if depth == 1000 else str(depth)
+                canvas.fill_rgb((0, 0, 0))
+                canvas.text_center(x, y0 - 10, label, 6.5)
+
+            canvas.fill_rgb((0, 0, 0))
+            title = f"{DATASET_DISPLAY.get(dataset, dataset)} {bits}b"
+            canvas.text_center(x0 + panel_w / 2, y0 + panel_h + 8, title, 8.5, "F2")
+            if col_index == 0:
+                canvas.text(x0, y0 + panel_h + 1, "Recall", 7.0, "F1")
+            if row_index == rows_n - 1:
+                canvas.text_center(x0 + panel_w / 2, y0 - 22, "Depth K", 7.0)
+
+            for method in methods:
+                values = panel_values.get(method)
+                if not values:
+                    continue
+                color = colors.get(method, (0, 0, 0))
+                points = [(map_x(depth), map_y(value)) for depth, value in values]
+                canvas.stroke_rgb(color)
+                canvas.line_width(1.0 if method != "EPQ" else 1.5)
+                canvas.polyline(points)
+                for x, y in points:
+                    canvas.marker(x, y, shapes.get(method, "circle"), 2.4, color)
+
+    write_pdf(output, width, height, canvas.stream())
+
+
+def proxy_points(
+    rows: dict[CaseKey, RowItem],
+    methods: list[str],
+    datasets: list[str],
+    bits_list: list[int],
+) -> list[ProxyPoint]:
+    points: list[ProxyPoint] = []
+    for dataset in datasets:
+        raw_values: list[tuple[str, int, float, float]] = []
+        for method in methods:
+            for bits in bits_list:
+                item = rows.get(CaseKey(method, dataset, bits))
+                if item is None:
+                    continue
+                distortion = safe_float(item.row, "J")
+                recall = safe_float(item.row, "recall_1")
+                if distortion is None or recall is None:
+                    raise RuntimeError(f"missing J or recall_1 in row {item.row}")
+                raw_values.append((method, bits, distortion, recall))
+        if not raw_values:
+            continue
+
+        min_distortion = min(value[2] for value in raw_values)
+        max_distortion = max(value[2] for value in raw_values)
+        min_recall = min(value[3] for value in raw_values)
+        max_recall = max(value[3] for value in raw_values)
+        distortion_range = max_distortion - min_distortion
+        recall_range = max_recall - min_recall
+        if distortion_range <= 0 or recall_range <= 0:
+            raise RuntimeError(f"cannot normalize proxy data for {dataset}")
+
+        for method, bits, distortion, recall in raw_values:
+            points.append(
+                ProxyPoint(
+                    method=method,
+                    dataset=dataset,
+                    bits=bits,
+                    x=(distortion - min_distortion) / distortion_range,
+                    y=(recall - min_recall) / recall_range,
+                )
+            )
+    return points
+
+
+def linear_fit(points: list[ProxyPoint]) -> FitStats:
+    if len(points) < 2:
+        raise RuntimeError("need at least two proxy points for a fit")
+    n = float(len(points))
+    sx = sum(point.x for point in points)
+    sy = sum(point.y for point in points)
+    sxx = sum(point.x * point.x for point in points)
+    sxy = sum(point.x * point.y for point in points)
+    denominator = n * sxx - sx * sx
+    if abs(denominator) < 1e-12:
+        raise RuntimeError("cannot fit proxy points with zero x variance")
+    slope = (n * sxy - sx * sy) / denominator
+    intercept = (sy - slope * sx) / n
+    mean_y = sy / n
+    total = sum((point.y - mean_y) ** 2 for point in points)
+    residual = sum((point.y - (slope * point.x + intercept)) ** 2 for point in points)
+    r2 = 1.0 - residual / total if total > 0 else 1.0
+    return FitStats(slope=slope, intercept=intercept, r2=r2)
+
+
+def fit_line_segment(stats: FitStats) -> list[tuple[float, float]]:
+    candidates: list[tuple[float, float]] = []
+    for x in (0.0, 1.0):
+        y = stats.slope * x + stats.intercept
+        if -1e-9 <= y <= 1.0 + 1e-9:
+            candidates.append((x, min(1.0, max(0.0, y))))
+    if abs(stats.slope) > 1e-12:
+        for y in (0.0, 1.0):
+            x = (y - stats.intercept) / stats.slope
+            if -1e-9 <= x <= 1.0 + 1e-9:
+                candidates.append((min(1.0, max(0.0, x)), y))
+
+    unique: list[tuple[float, float]] = []
+    for x, y in candidates:
+        if all(abs(x - other_x) > 1e-6 or abs(y - other_y) > 1e-6 for other_x, other_y in unique):
+            unique.append((x, y))
+    unique.sort()
+    return unique[:2]
+
+
+def draw_proxy_corr_figure(
+    rows: dict[CaseKey, RowItem],
+    methods: list[str],
+    datasets: list[str],
+    bits_list: list[int],
+    output: Path,
+) -> FitStats:
+    points = proxy_points(rows, methods, datasets, bits_list)
+    stats = linear_fit(points)
+
+    width = 300.0
+    height = 230.0
+    canvas = PdfCanvas(width, height)
+    colors = {
+        "sift1M": (0.00, 0.47, 0.24),
+        "gist1M": (0.78, 0.22, 0.15),
+        "deep10M": (0.00, 0.30, 0.65),
+    }
+    shapes = {64: "circle", 128: "diamond"}
+
+    canvas.text_center(width / 2, height - 17, "Proxy distortion vs Recall@1", 10, "F2")
+
+    legend_y = height - 34
+    legend_x = 42.0
+    for dataset in datasets:
+        color = colors.get(dataset, (0.0, 0.0, 0.0))
+        canvas.marker(legend_x, legend_y + 3, "circle", 2.7, color)
+        canvas.fill_rgb((0, 0, 0))
+        label = DATASET_DISPLAY.get(dataset, dataset)
+        canvas.text(legend_x + 6, legend_y, label, 7.5)
+        legend_x += 48.0
+    canvas.marker(legend_x + 4, legend_y + 3, "circle", 2.7, (0.25, 0.25, 0.25))
+    canvas.fill_rgb((0, 0, 0))
+    canvas.text(legend_x + 10, legend_y, "64b", 7.5)
+    canvas.marker(legend_x + 34, legend_y + 3, "diamond", 2.7, (0.25, 0.25, 0.25))
+    canvas.fill_rgb((0, 0, 0))
+    canvas.text(legend_x + 40, legend_y, "128b", 7.5)
+
+    left = 44.0
+    right = 14.0
+    bottom = 38.0
+    top = 56.0
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+
+    def map_x(value: float) -> float:
+        return left + value * plot_w
+
+    def map_y(value: float) -> float:
+        return bottom + value * plot_h
+
+    canvas.stroke_rgb((0.84, 0.84, 0.84))
+    canvas.line_width(0.35)
+    for tick in (0.0, 0.5, 1.0):
+        x = map_x(tick)
+        y = map_y(tick)
+        canvas.line(x, bottom, x, bottom + plot_h)
+        canvas.line(left, y, left + plot_w, y)
+
+    canvas.stroke_rgb((0.0, 0.0, 0.0))
+    canvas.line_width(0.7)
+    canvas.line(left, bottom, left + plot_w, bottom)
+    canvas.line(left, bottom, left, bottom + plot_h)
+
+    for tick in (0.0, 0.5, 1.0):
+        x = map_x(tick)
+        y = map_y(tick)
+        canvas.stroke_rgb((0.0, 0.0, 0.0))
+        canvas.line_width(0.6)
+        canvas.line(x, bottom, x, bottom - 2)
+        canvas.line(left - 2, y, left, y)
+        canvas.fill_rgb((0, 0, 0))
+        canvas.text_center(x, bottom - 11, f"{tick:.1f}", 6.8)
+        canvas.text_right(left - 5, y - 2.2, f"{tick:.1f}", 6.8)
+
+    segment = fit_line_segment(stats)
+    if len(segment) == 2:
+        canvas.stroke_rgb((0.10, 0.10, 0.10))
+        canvas.line_width(1.1)
+        canvas.line(
+            map_x(segment[0][0]),
+            map_y(segment[0][1]),
+            map_x(segment[1][0]),
+            map_y(segment[1][1]),
+        )
+
+    for point in points:
+        color = colors.get(point.dataset, (0.0, 0.0, 0.0))
+        shape = shapes.get(point.bits, "circle")
+        canvas.marker(map_x(point.x), map_y(point.y), shape, 2.6, color)
+
+    canvas.fill_rgb((0, 0, 0))
+    canvas.text(left + 7, bottom + plot_h - 14, f"y={stats.slope:.3f}x+{stats.intercept:.3f}", 7.2)
+    canvas.text(left + 7, bottom + plot_h - 25, f"R2={stats.r2:.2f}", 7.2)
+    canvas.text(left, bottom + plot_h + 5, "Norm. Recall@1", 7.5)
+    canvas.text_center(left + plot_w / 2, 16, "Normalized proxy distortion J", 7.5)
+
+    write_pdf(output, width, height, canvas.stream())
+    return stats
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate paper-facing flat ADC figures and tables from CSV logs."
+    )
+    parser.add_argument("--csv-dir", type=Path, default=ROOT)
+    parser.add_argument("--methods", default=",".join(DEFAULT_METHODS))
+    parser.add_argument(
+        "--recall-methods", default=",".join(DEFAULT_RECALL_METHODS)
+    )
+    parser.add_argument("--datasets", default=",".join(DEFAULT_DATASETS))
+    parser.add_argument("--bits", default=",".join(str(bit) for bit in DEFAULT_BITS))
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=PAPER_ROOT / "generated" / "flat-recall-depth.pdf",
+    )
+    parser.add_argument(
+        "--proxy-output",
+        type=Path,
+        default=PAPER_ROOT / "generated" / "proxy-corr.pdf",
+    )
+    parser.add_argument(
+        "--epq-time-table-output",
+        type=Path,
+        default=PAPER_ROOT / "generated" / "flat_epq_time_table.tex",
+    )
+    parser.add_argument("--no-recall-figure", action="store_true")
+    parser.add_argument("--no-proxy-figure", action="store_true")
+    parser.add_argument("--no-epq-time-table", action="store_true")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    methods = parse_str_list(args.methods)
+    recall_methods = parse_str_list(args.recall_methods)
+    all_methods = list(dict.fromkeys([*methods, *recall_methods]))
+    datasets = parse_str_list(args.datasets)
+    bits_list = parse_int_list(args.bits)
+    rows = load_rows(args.csv_dir, all_methods)
+
+    missing = [
+        f"{method}/{dataset}/{bits}b"
+        for method in all_methods
+        for dataset in datasets
+        for bits in bits_list
+        if CaseKey(method, dataset, bits) not in rows
+    ]
+    if missing:
+        print("missing cases: " + ", ".join(missing), file=sys.stderr)
+        raise SystemExit(1)
+
+    if not args.no_recall_figure:
+        draw_flat_recall_figure(rows, recall_methods, datasets, bits_list, args.output)
+        print(f"wrote {args.output}")
+    if not args.no_proxy_figure:
+        stats = draw_proxy_corr_figure(rows, methods, datasets, bits_list, args.proxy_output)
+        print(
+            f"wrote {args.proxy_output} "
+            f"(slope={stats.slope:.6f}, intercept={stats.intercept:.6f}, r2={stats.r2:.6f})"
+        )
+    if not args.no_epq_time_table:
+        if "EPQ" not in methods:
+            raise RuntimeError("cannot render flat EPQ time table without EPQ")
+        args.epq_time_table_output.parent.mkdir(parents=True, exist_ok=True)
+        args.epq_time_table_output.write_text(
+            render_flat_epq_time_table(rows, datasets, bits_list)
+        )
+        print(f"wrote {args.epq_time_table_output}")
+
+
+if __name__ == "__main__":
+    main()

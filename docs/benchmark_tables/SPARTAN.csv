@@ -1,0 +1,1 @@
+timestamp,dataset,d,nb,nq,budget_b,train_rows,proxy_train,proxy_eval,threads,impl_backend,structure_s,prep_s,codebook_s,train_total_s,peak_ram_gb,add_encode_s,encode_us_per_vec,search_total_s,search_ms_per_q,qps,recall_1,recall_10,recall_100,overlap_1000,J,index_size_mb,notes

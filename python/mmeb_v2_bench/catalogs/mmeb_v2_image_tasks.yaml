@@ -1,0 +1,188 @@
+ImageNet-1K:
+  group: image
+  dataset_parser: image_cls
+  dataset_split: test
+  media_root: image-tasks
+  aliases:
+    - mm_core12
+N24News:
+  group: image
+  dataset_parser: image_cls
+  dataset_split: test
+  media_root: image-tasks
+HatefulMemes:
+  group: image
+  dataset_parser: image_cls
+  dataset_split: test
+  media_root: image-tasks
+VOC2007:
+  group: image
+  dataset_parser: image_cls
+  dataset_split: test
+  media_root: image-tasks
+SUN397:
+  group: image
+  dataset_parser: image_cls
+  dataset_split: test
+  media_root: image-tasks
+Place365:
+  group: image
+  dataset_parser: image_cls
+  dataset_split: test
+  media_root: image-tasks
+ImageNet-A:
+  group: image
+  dataset_parser: image_cls
+  dataset_split: test
+  media_root: image-tasks
+ImageNet-R:
+  group: image
+  dataset_parser: image_cls
+  dataset_split: test
+  media_root: image-tasks
+ObjectNet:
+  group: image
+  dataset_parser: image_cls
+  dataset_split: test
+  media_root: image-tasks
+Country211:
+  group: image
+  dataset_parser: image_cls
+  dataset_split: test
+  media_root: image-tasks
+OK-VQA:
+  group: image
+  dataset_parser: image_qa
+  dataset_split: test
+  media_root: image-tasks
+A-OKVQA:
+  group: image
+  dataset_parser: image_qa
+  dataset_split: test
+  media_root: image-tasks
+DocVQA:
+  group: image
+  dataset_parser: image_qa
+  dataset_split: test
+  media_root: image-tasks
+  aliases:
+    - mm_core12
+InfographicsVQA:
+  group: image
+  dataset_parser: image_qa
+  dataset_split: test
+  media_root: image-tasks
+ChartQA:
+  group: image
+  dataset_parser: image_qa
+  dataset_split: test
+  media_root: image-tasks
+Visual7W:
+  group: image
+  dataset_parser: image_qa
+  dataset_split: test
+  media_root: image-tasks
+ScienceQA:
+  group: image
+  dataset_parser: image_qa
+  dataset_split: test
+  media_root: image-tasks
+VizWiz:
+  group: image
+  dataset_parser: image_qa
+  dataset_split: test
+  media_root: image-tasks
+GQA:
+  group: image
+  dataset_parser: image_qa
+  dataset_split: test
+  media_root: image-tasks
+TextVQA:
+  group: image
+  dataset_parser: image_qa
+  dataset_split: test
+  media_root: image-tasks
+MSCOCO_i2t:
+  group: image
+  dataset_parser: image_i2t
+  dataset_split: test
+  media_root: image-tasks
+VisualNews_i2t:
+  group: image
+  dataset_parser: image_i2t
+  dataset_split: test
+  media_root: image-tasks
+VisDial:
+  group: image
+  dataset_parser: image_t2i
+  dataset_split: test
+  media_root: image-tasks
+MSCOCO_t2i:
+  group: image
+  dataset_parser: image_t2i
+  dataset_split: test
+  media_root: image-tasks
+  aliases:
+    - mm_core12
+VisualNews_t2i:
+  group: image
+  dataset_parser: image_t2i
+  dataset_split: test
+  media_root: image-tasks
+  aliases:
+    - mm_core12
+WebQA:
+  group: image
+  dataset_parser: image_t2i
+  dataset_split: test
+  media_root: image-tasks
+EDIS:
+  group: image
+  dataset_parser: image_t2i
+  dataset_split: test
+  media_root: image-tasks
+Wiki-SS-NQ:
+  group: image
+  dataset_parser: image_t2i
+  dataset_split: test
+  media_root: image-tasks
+CIRR:
+  group: image
+  dataset_parser: image_i2i_vg
+  dataset_split: test
+  media_root: image-tasks
+NIGHTS:
+  group: image
+  dataset_parser: image_i2i_vg
+  dataset_split: test
+  media_root: image-tasks
+OVEN:
+  group: image
+  dataset_parser: image_i2i_vg
+  dataset_split: test
+  media_root: image-tasks
+FashionIQ:
+  group: image
+  dataset_parser: image_i2i_vg
+  dataset_split: test
+  media_root: image-tasks
+MSCOCO:
+  group: image
+  dataset_parser: image_i2i_vg
+  dataset_split: test
+  media_root: image-tasks
+RefCOCO:
+  group: image
+  dataset_parser: image_i2i_vg
+  dataset_split: test
+  media_root: image-tasks
+RefCOCO-Matching:
+  group: image
+  dataset_parser: image_i2i_vg
+  dataset_split: test
+  media_root: image-tasks
+Visual7W-Pointing:
+  group: image
+  dataset_parser: image_i2i_vg
+  dataset_split: test
+  media_root: image-tasks

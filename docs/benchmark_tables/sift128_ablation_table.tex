@@ -1,0 +1,16 @@
+\begin{table}[t]
+\centering
+\small
+\caption{Ablation study on SIFT1M at 128 bits under the flat ADC protocol.}
+\label{tab:sift128-ablation}
+\begin{tabular}{lrrrrrrrrrr}
+\toprule
+Variant & $M$ & R@1 & R@10 & R@100 & Overlap@1k & $J$ & Train (s) & Add (s) & Search (s) & QPS \\
+\midrule
+Full EPQ & 12 & \textbf{0.5204} & \textbf{0.9344} & \textbf{0.9993} & \textbf{0.7529} & \textbf{8842} & 694.2 & 29.18 & 16.55 & 604 \\
+w/o Structure Learning & 15 & 0.4833 & 0.9130 & 0.9988 & 0.7339 & 9734 & 75.53 & 27.33 & 15.41 & 649 \\
+w/o UnevenOPQ & 12 & 0.4970 & 0.9236 & 0.9990 & 0.7436 & 9309 & 673.1 & 27.59 & 16.56 & 604 \\
+w/o Residual Tail & 12 & 0.5061 & 0.9308 & 0.9991 & 0.7469 & 9124 & 597.1 & 7.35 & 4.86 & 2060 \\
+\bottomrule
+\end{tabular}
+\end{table}

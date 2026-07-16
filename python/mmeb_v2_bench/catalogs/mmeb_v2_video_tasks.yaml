@@ -1,0 +1,56 @@
+Kinetics-700:
+  group: video
+  dataset_parser: video_cls_local
+  media_root: video-tasks
+  source_name: k700
+  media_subdir: frames/video_cls
+  aliases:
+    - mm_core12
+SmthSmthV2:
+  group: video
+  dataset_parser: video_cls_local
+  media_root: video-tasks
+  source_name: ssv2
+  media_subdir: frames/video_cls
+  aliases:
+    - mm_core12
+Breakfast:
+  group: video
+  dataset_parser: video_cls_local
+  media_root: video-tasks
+  source_name: breakfast
+  media_subdir: frames/video_cls
+HMDB51:
+  group: video
+  dataset_parser: video_cls_local
+  media_root: video-tasks
+  source_name: hmdb51
+  media_subdir: frames/video_cls
+UCF101:
+  group: video
+  dataset_parser: video_cls_local
+  media_root: video-tasks
+  source_name: ucf101
+  media_subdir: frames/video_cls
+ActivityNetQA:
+  group: video
+  dataset_parser: video_qa_binary_local
+  media_root: video-tasks
+  source_name: activitynetqa
+  media_subdir: frames/video_qa/ActivityNetQA
+  aliases:
+    - mm_core12
+QVHighlight:
+  group: video
+  dataset_parser: video_mret_local
+  media_root: video-tasks
+  source_name: qvhighlight
+  media_subdir: frames/video_mret/QVHighlight
+  aliases:
+    - mm_core12
+Charades-STA:
+  group: video
+  dataset_parser: video_mret_local
+  media_root: video-tasks
+  source_name: charades_sta
+  media_subdir: frames/video_mret/Charades-STA

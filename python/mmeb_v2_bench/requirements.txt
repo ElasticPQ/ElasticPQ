@@ -1,0 +1,11 @@
+numpy
+tqdm
+pyyaml
+pillow
+pyarrow
+datasets
+huggingface_hub
+google-genai
+modelscope
+addict
+hf_transfer

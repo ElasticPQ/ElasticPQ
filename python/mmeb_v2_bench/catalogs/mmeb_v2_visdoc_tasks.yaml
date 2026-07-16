@@ -1,0 +1,32 @@
+ViDoRe_docvqa:
+  group: visdoc
+  dataset_parser: visdoc_beir_local
+  media_root: visdoc-tasks
+  source_name: docvqa_test_subsampled_beir
+  media_subdir: images/docvqa_test_subsampled_beir
+  aliases:
+    - mm_core12
+ViDoRe_esg_reports_human_labeled_v2:
+  group: visdoc
+  dataset_parser: visdoc_beir_local
+  media_root: visdoc-tasks
+  source_name: esg_reports_human_labeled_v2
+  media_subdir: images/esg_reports_human_labeled_v2
+  aliases:
+    - mm_core12
+VisRAG_MP-DocVQA:
+  group: visdoc
+  dataset_parser: visdoc_beir_local
+  media_root: visdoc-tasks
+  source_name: VisRAG-Ret-Test-MP-DocVQA
+  media_subdir: images/VisRAG-Ret-Test-MP-DocVQA
+  aliases:
+    - mm_core12
+MMLongBench-doc:
+  group: visdoc
+  dataset_parser: visdoc_beir_local
+  media_root: visdoc-tasks
+  source_name: MMLongBench-doc
+  media_subdir: images/MMLongBench-doc
+  aliases:
+    - mm_core12

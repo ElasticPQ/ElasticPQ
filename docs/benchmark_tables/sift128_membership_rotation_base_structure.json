@@ -1,0 +1,298 @@
+{
+  "d": 128,
+  "format_version": 1,
+  "groups": [
+    {
+      "dims": [
+        17,
+        21,
+        47,
+        49
+      ],
+      "nbits": 5
+    },
+    {
+      "dims": [
+        81,
+        87,
+        105,
+        109,
+        111,
+        113,
+        117,
+        119
+      ],
+      "nbits": 9
+    },
+    {
+      "dims": [
+        0,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39
+      ],
+      "nbits": 10
+    },
+    {
+      "dims": [
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103
+      ],
+      "nbits": 6
+    },
+    {
+      "dims": [
+        16,
+        18,
+        19,
+        20,
+        22,
+        23,
+        44,
+        48,
+        52,
+        76,
+        80,
+        84
+      ],
+      "nbits": 12
+    },
+    {
+      "dims": [
+        59,
+        61,
+        62,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95
+      ],
+      "nbits": 11
+    },
+    {
+      "dims": [
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        104
+      ],
+      "nbits": 9
+    },
+    {
+      "dims": [
+        40,
+        41,
+        42,
+        50,
+        72,
+        73,
+        74,
+        75,
+        82,
+        106,
+        107,
+        108,
+        114
+      ],
+      "nbits": 12
+    },
+    {
+      "dims": [
+        43,
+        45,
+        46,
+        51,
+        53,
+        54,
+        55,
+        77,
+        78,
+        79,
+        83,
+        85,
+        86
+      ],
+      "nbits": 12
+    },
+    {
+      "dims": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "nbits": 12
+    },
+    {
+      "dims": [
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        56,
+        57,
+        58,
+        60,
+        63
+      ],
+      "nbits": 11
+    },
+    {
+      "dims": [
+        110,
+        112,
+        115,
+        116,
+        118,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127
+      ],
+      "nbits": 11
+    }
+  ],
+  "meta": {
+    "builder": "RefinedStructureBuilder",
+    "chain_tail_profile": {
+      "candidates_total": 757,
+      "donor_small_stops_total": 0,
+      "exact_attempted": 140,
+      "exact_children": 115,
+      "exact_dup_pruned": 0,
+      "exact_local_kept_total": 490,
+      "exact_local_reranked_total": 757,
+      "exact_seen_pruned": 25,
+      "improved_iters": 29,
+      "iterations": 48,
+      "iters_with_candidates": 47,
+      "local_gate_pruned_total": 1337,
+      "max_steps": 4,
+      "no_step_stops_total": 0,
+      "prefix_cut_stops_total": 2024,
+      "seeds_kept_total": 2256,
+      "seeds_raw_total": 6762,
+      "total_steps": 2015
+    },
+    "pipeline_time": 672.53764104,
+    "proxy_cache": {
+      "cache_slices": true,
+      "d_capacity": 400000,
+      "d_fast_capacity": 400000,
+      "d_fast_hits": 544386,
+      "d_fast_misses": 43787,
+      "d_fast_size": 43787,
+      "d_hits": 340541,
+      "d_misses": 11622,
+      "d_size": 11622,
+      "pca_capacity": 2048,
+      "pca_fast_capacity": 2048,
+      "pca_fast_hits": 0,
+      "pca_fast_misses": 404,
+      "pca_fast_size": 404,
+      "pca_fast_top_dims": 16,
+      "pca_hits": 0,
+      "pca_misses": 0,
+      "pca_size": 0,
+      "pca_top_dims": 0,
+      "xev_bytes": 3948756992,
+      "xev_capacity_bytes": 12884901888,
+      "xev_hits": 32074,
+      "xev_misses": 23335,
+      "xev_size": 23335,
+      "xtr_bytes": 12884508672,
+      "xtr_capacity_bytes": 12884901888,
+      "xtr_hits": 32074,
+      "xtr_misses": 23335,
+      "xtr_size": 18464
+    },
+    "proxy_eval_rows": 4096,
+    "proxy_train_rows": 16384,
+    "proxy_work": {
+      "d_calls": 352163,
+      "d_empty_calls": 0,
+      "d_fast_calls": 588173,
+      "d_fast_empty_calls": 0,
+      "kmeans_calls": 11622,
+      "kmeans_dims_total": 105818,
+      "kmeans_eval_rows_total": 47603712,
+      "kmeans_fast_calls": 43787,
+      "kmeans_fast_dims_total": 466538,
+      "kmeans_fast_eval_rows_total": 179351552,
+      "kmeans_fast_k_total": 59626032,
+      "kmeans_fast_train_rows_total": 717406208,
+      "kmeans_k_total": 9833929,
+      "kmeans_train_rows_total": 190414848,
+      "pca_approx_calls": 0,
+      "pca_fast_approx_calls": 404,
+      "pca_fast_fits": 404,
+      "pca_fast_full_dims_total": 8216,
+      "pca_fast_proj_dims_total": 6464,
+      "pca_fast_tail_dims_total": 1752,
+      "pca_fits": 0,
+      "pca_full_dims_total": 0,
+      "pca_proj_dims_total": 0,
+      "pca_tail_dims_total": 0,
+      "solve_bits_calls": 1170,
+      "solve_bits_cost_evals": 297908,
+      "solve_bits_dp_states": 2000636,
+      "solve_bits_dp_transitions": 25133420,
+      "solve_bits_groups_total": 22916
+    },
+    "stage_times": {
+      "chain_tail_time": 504.756191344,
+      "crystallize_time": 162.601610179,
+      "greedy_tail_time": 0.0,
+      "grow_time": 5.179824661,
+      "mbeam_time": 0.0
+    },
+    "stages": {
+      "chain_tail": true,
+      "crystallize": true,
+      "greedy_tail": false,
+      "grow": true,
+      "mbeam": false
+    },
+    "tail_refine_stage": "chain_tail"
+  },
+  "total_bits": 120
+}

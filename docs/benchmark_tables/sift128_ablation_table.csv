@@ -1,0 +1,5 @@
+variant,target,config_path,builder,use_uneven_transform,residual_tail,M,train_s,structure_s,preparation_s,codebook_s,add_s,search_s,qps,recall_1,recall_10,recall_100,recall_1000,overlap_1000,reconstruction_error,index_mib,train_rows,base_rows,query_rows,maxtrain,exit_status
+full_arepq,arepq_fixed,configs/epq_train_standard_reuse.json,refined,True,True,12,694.247,667.338,17.194,9.692,29.176,16.555,604.033,0.5204,0.9344,0.9993,1.0,0.7529,8842.349,16.638,100000,1000000,10000,0,0
+no_structure,arepq_fixed,configs/epq_train_ablate_no_structure.json,balanced,True,True,15,75.534,0.0,68.749,6.754,27.33,15.409,648.986,0.4833,0.913,0.9988,1.0,0.7339,9734.216,15.573,100000,1000000,10000,0,0
+no_uneven,arepq_fixed,configs/epq_train_ablate_no_uneven.json,refined,False,True,12,673.15,663.636,0.0,9.497,27.589,16.561,603.837,0.497,0.9236,0.999,1.0,0.7436,9308.738,16.575,100000,1000000,10000,0,0
+no_residual_tail,epq,configs/epq_train_standard_reuse.json,refined,True,False,12,597.096,570.133,23.752,3.186,7.354,4.855,2059.585,0.5061,0.9308,0.9991,1.0,0.7469,9123.894,16.515,100000,1000000,10000,0,0
